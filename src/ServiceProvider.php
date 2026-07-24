@@ -63,11 +63,12 @@ class ServiceProvider extends BaseServiceProvider
         $cpPrefix = config('statamic.cp.route', 'cp');
 
         // Switcher routes, mounted under the CP with its auth/session middleware.
-        // Registering the group here (not via pushCpRoutes) is reliable
-        // regardless of provider boot order.
+        // Named under the `statamic.cp.` prefix so Statamic's cp_route() (used by
+        // the nav) resolves them. Registering the group here (not via
+        // pushCpRoutes) is reliable regardless of provider boot order.
         \Illuminate\Support\Facades\Route::middleware('statamic.cp')
             ->prefix($cpPrefix)
-            ->name('brand-context.')
+            ->name('statamic.cp.brand-context.')
             ->group(__DIR__.'/../routes/cp.php');
 
         // Every CP request must resolve the active brand from the session,
@@ -77,7 +78,13 @@ class ServiceProvider extends BaseServiceProvider
             $this->app['router']->pushMiddlewareToGroup('statamic.cp', SetBrandFromSession::class);
         });
 
+        // Only add the nav item once the route is actually registered — a nav
+        // callback that references a missing route would 500 every CP page.
         \Statamic\Facades\CP\Nav::extend(function ($nav) {
+            if (! \Illuminate\Support\Facades\Route::has('statamic.cp.brand-context.switcher.index')) {
+                return;
+            }
+
             $nav->tools(__('Brands'))
                 ->route('brand-context.switcher.index')
                 ->icon('shield');
