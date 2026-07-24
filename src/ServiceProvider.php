@@ -56,25 +56,31 @@ class ServiceProvider extends BaseServiceProvider
             return;
         }
 
-        // CP wiring only matters in multi-brand mode. Guard every Statamic call:
-        // config can turn multi-brand on before the CP is booted (route caching,
-        // console, tests), and a raw facade call there would be fatal. Fail safe.
-        try {
-            if (! app('brand-context')->multiBrandEnabled()) {
-                return;
-            }
-
-            \Statamic\Facades\Statamic::pushCpRoutes(function () {
-                require __DIR__.'/../routes/cp.php';
-            });
-
-            \Statamic\Facades\CP\Nav::extend(function ($nav) {
-                $nav->tools('Brands')
-                    ->route('brand-context.switcher.index')
-                    ->icon('shield');
-            });
-        } catch (\Throwable) {
-            // CP not ready in this context — skip switcher wiring silently.
+        if (! app('brand-context')->multiBrandEnabled()) {
+            return;
         }
+
+        $cpPrefix = config('statamic.cp.route', 'cp');
+
+        // Switcher routes, mounted under the CP with its auth/session middleware.
+        // Registering the group here (not via pushCpRoutes) is reliable
+        // regardless of provider boot order.
+        \Illuminate\Support\Facades\Route::middleware('statamic.cp')
+            ->prefix($cpPrefix)
+            ->name('brand-context.')
+            ->group(__DIR__.'/../routes/cp.php');
+
+        // Every CP request must resolve the active brand from the session,
+        // otherwise the fail-closed scope hides all data. Push after the app has
+        // booted so the statamic.cp middleware group already exists.
+        $this->app->booted(function () {
+            $this->app['router']->pushMiddlewareToGroup('statamic.cp', SetBrandFromSession::class);
+        });
+
+        \Statamic\Facades\CP\Nav::extend(function ($nav) {
+            $nav->tools(__('Brands'))
+                ->route('brand-context.switcher.index')
+                ->icon('shield');
+        });
     }
 }
