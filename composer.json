@@ -1,0 +1,73 @@
+{
+    "name": "goldnead/statamic-brand-context",
+    "description": "Optional multi-brand (multi-tenant) foundation for Statamic addons. Single-brand by default, multi-brand behind a feature flag.",
+    "type": "statamic-addon",
+    "license": "MIT",
+    "keywords": [
+        "statamic",
+        "statamic-addon",
+        "multi-tenant",
+        "multi-brand",
+        "brand"
+    ],
+    "authors": [
+        {
+            "name": "Adrian Goldner",
+            "email": "info@adriangoldner.com"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/goldnead/statamic-brand-context/issues",
+        "source": "https://github.com/goldnead/statamic-brand-context"
+    },
+    "require": {
+        "php": "^8.2",
+        "laravel/framework": "^11.0|^12.0|^13.0",
+        "statamic/cms": "^6.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^8.0|^9.0|^10.0|^11.0",
+        "pestphp/pest": "^2.0|^3.0",
+        "pestphp/pest-plugin-laravel": "^2.0|^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Goldnead\\BrandContext\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Goldnead\\BrandContext\\Tests\\": "tests/",
+            "Goldnead\\BrandContext\\Database\\Factories\\": "database/factories/"
+        }
+    },
+    "extra": {
+        "statamic": {
+            "name": "Brand Context",
+            "description": "Optional multi-brand foundation for Statamic addons."
+        },
+        "laravel": {
+            "providers": [
+                "Goldnead\\BrandContext\\ServiceProvider"
+            ],
+            "aliases": {
+                "BrandContext": "Goldnead\\BrandContext\\Facades\\BrandContext"
+            }
+        }
+    },
+    "scripts": {
+        "test": [
+            "@php vendor/bin/pest"
+        ]
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "composer/installers": true,
+            "php-http/discovery": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
