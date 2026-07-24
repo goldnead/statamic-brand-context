@@ -60,34 +60,47 @@ class ServiceProvider extends BaseServiceProvider
             return;
         }
 
-        $cpPrefix = config('statamic.cp.route', 'cp');
-
-        // Switcher routes, mounted under the CP with its auth/session middleware.
-        // Named under the `statamic.cp.` prefix so Statamic's cp_route() (used by
-        // the nav) resolves them. Registering the group here (not via
-        // pushCpRoutes) is reliable regardless of provider boot order.
-        \Illuminate\Support\Facades\Route::middleware('statamic.cp')
-            ->prefix($cpPrefix)
-            ->name('statamic.cp.brand-context.')
-            ->group(__DIR__.'/../routes/cp.php');
-
         // Every CP request must resolve the active brand from the session,
         // otherwise the fail-closed scope hides all data. Push after the app has
-        // booted so the statamic.cp middleware group already exists.
+        // booted so the statamic.cp middleware group already exists. Switching is
+        // a plain ?brand=<handle> GET the middleware handles — no extra page.
         $this->app->booted(function () {
             $this->app['router']->pushMiddlewareToGroup('statamic.cp', SetBrandFromSession::class);
         });
 
-        // Only add the nav item once the route is actually registered — a nav
-        // callback that references a missing route would 500 every CP page.
+        // Native CP nav: a "Brands" group in the Tools section with one child per
+        // brand. Clicking a child switches the active brand in place. The parent
+        // label shows the current brand at a glance.
         \Statamic\Facades\CP\Nav::extend(function ($nav) {
-            if (! \Illuminate\Support\Facades\Route::has('statamic.cp.brand-context.switcher.index')) {
-                return;
-            }
+            // A failure here must never take down the whole CP (the nav renders
+            // on every page). Log it and skip the item instead of 500ing.
+            try {
+                $manager = app('brand-context');
+                $brands = \Goldnead\BrandContext\Models\Brand::query()
+                    ->orderByDesc('is_default')->orderBy('name')->get();
 
-            $nav->tools(__('Brands'))
-                ->route('brand-context.switcher.index')
-                ->icon('shield');
+                if ($brands->isEmpty()) {
+                    return;
+                }
+
+                $currentId = $manager->hasCurrent() ? $manager->currentId() : $manager->defaultId();
+                $base = cp_route('index');
+
+                $children = $brands->map(fn ($brand) => $nav
+                    ->item($brand->name.($brand->id === $currentId ? '  ✓' : ''))
+                    ->url($base.'?brand='.$brand->handle)
+                )->all();
+
+                $active = optional($brands->firstWhere('id', $currentId));
+
+                $nav->create(__('Brands').($active ? ': '.$active->name : ''))
+                    ->section('Tools')
+                    ->icon('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg>')
+                    ->url($base.'?brand='.($active->handle ?? $brands->first()->handle))
+                    ->children($children);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('brand-context: CP nav build failed', ['error' => $e->getMessage()]);
+            }
         });
     }
 }
