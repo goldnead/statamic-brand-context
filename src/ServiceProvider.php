@@ -56,18 +56,25 @@ class ServiceProvider extends BaseServiceProvider
             return;
         }
 
-        if (! app('brand-context')->multiBrandEnabled()) {
-            return;
+        // CP wiring only matters in multi-brand mode. Guard every Statamic call:
+        // config can turn multi-brand on before the CP is booted (route caching,
+        // console, tests), and a raw facade call there would be fatal. Fail safe.
+        try {
+            if (! app('brand-context')->multiBrandEnabled()) {
+                return;
+            }
+
+            \Statamic\Facades\Statamic::pushCpRoutes(function () {
+                require __DIR__.'/../routes/cp.php';
+            });
+
+            \Statamic\Facades\CP\Nav::extend(function ($nav) {
+                $nav->tools('Brands')
+                    ->route('brand-context.switcher.index')
+                    ->icon('shield');
+            });
+        } catch (\Throwable) {
+            // CP not ready in this context — skip switcher wiring silently.
         }
-
-        \Statamic\Facades\CP\Nav::extend(function ($nav) {
-            $nav->tools('Brands')
-                ->route('brand-context.switcher.index')
-                ->icon('shield');
-        });
-
-        \Statamic\Facades\Statamic::pushCpRoutes(function () {
-            require __DIR__.'/../routes/cp.php';
-        });
     }
 }
