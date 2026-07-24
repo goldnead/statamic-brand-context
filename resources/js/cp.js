@@ -10,6 +10,13 @@
 import BrandSwitcher from './BrandSwitcher.vue';
 
 Statamic.booting(() => {
-    Statamic.$components.register('brand-switcher', BrandSwitcher);
-    Statamic.$components.append('brand-switcher');
+    // Guard: a switcher failure must never crash the whole CP (it runs inside
+    // Statamic.start()). append() requires an options object (it destructures
+    // `props` from it), so pass one even though we take no props.
+    try {
+        Statamic.$components.register('brand-switcher', BrandSwitcher);
+        Statamic.$components.append('brand-switcher', { props: {} });
+    } catch (e) {
+        console.error('[brand-context] brand switcher failed to mount:', e);
+    }
 });
