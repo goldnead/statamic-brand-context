@@ -61,46 +61,25 @@ class ServiceProvider extends BaseServiceProvider
         }
 
         // Every CP request must resolve the active brand from the session,
-        // otherwise the fail-closed scope hides all data. Push after the app has
-        // booted so the statamic.cp middleware group already exists. Switching is
-        // a plain ?brand=<handle> GET the middleware handles — no extra page.
+        // otherwise the fail-closed scope hides all data. The same middleware
+        // also hands the brand list + current brand to the CP JS. Push after the
+        // app has booted so the statamic.cp middleware group already exists.
         $this->app->booted(function () {
             $this->app['router']->pushMiddlewareToGroup('statamic.cp', SetBrandFromSession::class);
         });
 
-        // Native CP nav: a "Brands" group in the Tools section with one child per
-        // brand. Clicking a child switches the active brand in place. The parent
-        // label shows the current brand at a glance.
-        \Statamic\Facades\CP\Nav::extend(function ($nav) {
-            // A failure here must never take down the whole CP (the nav renders
-            // on every page). Log it and skip the item instead of 500ing.
-            try {
-                $manager = app('brand-context');
-                $brands = \Goldnead\BrandContext\Models\Brand::query()
-                    ->orderByDesc('is_default')->orderBy('name')->get();
+        // Load the CP brand-switcher bundle (a global Vue component that floats a
+        // brand selector into the top-right of the CP header — the supported way,
+        // since Statamic exposes no addon slot for the native user menu/topbar).
+        // Built into resources/dist/build, published to public/vendor/….
+        \Statamic\Statamic::vite('statamic-brand-context', [
+            'buildDirectory' => 'vendor/statamic-brand-context/build',
+            'input' => ['resources/js/cp.js'],
+            'hotFile' => public_path('vendor/statamic-brand-context/hot'),
+        ]);
 
-                if ($brands->isEmpty()) {
-                    return;
-                }
-
-                $currentId = $manager->hasCurrent() ? $manager->currentId() : $manager->defaultId();
-                $base = cp_route('index');
-
-                $children = $brands->map(fn ($brand) => $nav
-                    ->item($brand->name.($brand->id === $currentId ? '  ✓' : ''))
-                    ->url($base.'?brand='.$brand->handle)
-                )->all();
-
-                $active = optional($brands->firstWhere('id', $currentId));
-
-                $nav->create(__('Brands').($active ? ': '.$active->name : ''))
-                    ->section('Tools')
-                    ->icon('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg>')
-                    ->url($base.'?brand='.($active->handle ?? $brands->first()->handle))
-                    ->children($children);
-            } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('brand-context: CP nav build failed', ['error' => $e->getMessage()]);
-            }
-        });
+        $this->publishes([
+            __DIR__.'/../resources/dist/build' => public_path('vendor/statamic-brand-context/build'),
+        ], 'brand-context-cp');
     }
 }
