@@ -67,6 +67,19 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick));
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     font-size: 13px;
 }
+/* On narrow screens the native topbar fills the right side, so float the
+   switcher to the bottom-right instead of overlapping it. */
+@media (max-width: 900px) {
+    .bc-switcher {
+        top: auto;
+        bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        right: 16px;
+    }
+    .bc-menu {
+        top: auto;
+        bottom: 44px;
+    }
+}
 .bc-btn {
     display: inline-flex;
     align-items: center;
