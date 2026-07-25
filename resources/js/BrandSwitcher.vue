@@ -77,7 +77,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick));
     }
     .bc-menu {
         top: auto;
-        bottom: 44px;
+        bottom: calc(100% + 8px);
     }
 }
 .bc-btn {
