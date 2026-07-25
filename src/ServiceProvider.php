@@ -23,7 +23,12 @@ class ServiceProvider extends BaseServiceProvider
     public function boot(): void
     {
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
-        $this->loadViewsFrom(__DIR__.'/../resources/views', 'brand-context');
+        // brand-context ships no Blade views (JS/CSS addon). Registering a
+        // non-existent views path makes `php artisan view:cache` (deploy
+        // `optimize`) fail with "directory does not exist" — guard it.
+        if (is_dir(__DIR__.'/../resources/views')) {
+            $this->loadViewsFrom(__DIR__.'/../resources/views', 'brand-context');
+        }
 
         $this->publishes([
             __DIR__.'/../config/brand-context.php' => config_path('brand-context.php'),
