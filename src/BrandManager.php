@@ -3,7 +3,9 @@
 namespace Goldnead\BrandContext;
 
 use Closure;
+use Goldnead\BrandContext\Exceptions\AmbiguousBrandRecord;
 use Goldnead\BrandContext\Models\Brand;
+use Illuminate\Database\Eloquent\Model;
 use RuntimeException;
 
 /**
@@ -159,6 +161,60 @@ class BrandManager
         } finally {
             $this->current = $previous;
         }
+    }
+
+    /**
+     * Derives the brand that owns the single record carrying this value.
+     *
+     * For requests that arrive with no session and therefore no brand: a
+     * confirmation link, an unsubscribe link, a tracking pixel. The visitor
+     * holds a token, the token belongs to exactly one record, and that record
+     * knows its brand — so the brand is derivable without ever trusting the
+     * request to name it.
+     *
+     * The safety of this rests entirely on one precondition: the column must
+     * carry a unique index across all brands. If two records answer, this
+     * throws instead of guessing, because guessing would mean serving one
+     * brand's record to another brand's visitor. A column that is only unique
+     * *per brand* must never be passed here.
+     *
+     * Returns null when nothing matches, so callers keep whatever they already
+     * did for an unknown token — this method never invents a not-found path.
+     *
+     * @param  class-string<Model>  $modelClass
+     *
+     * @throws AmbiguousBrandRecord
+     */
+    public function brandForUnique(string $modelClass, string $column, mixed $value): ?Brand
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        /** @var Model $model */
+        $model = new $modelClass;
+        $brandColumn = method_exists($model, 'getBrandColumn') ? $model->getBrandColumn() : 'brand_id';
+
+        // Two rows are enough to know it is ambiguous; there is no reason to
+        // read more.
+        $rows = $this->withoutBrandScope(
+            fn () => $modelClass::query()
+                ->where($column, $value)
+                ->limit(2)
+                ->get([$model->getKeyName(), $brandColumn])
+        );
+
+        if ($rows->isEmpty()) {
+            return null;
+        }
+
+        if ($rows->count() > 1) {
+            throw AmbiguousBrandRecord::for($modelClass, $column);
+        }
+
+        $brandId = $rows->first()->{$brandColumn};
+
+        return $brandId === null ? null : $this->resolveBrand((int) $brandId);
     }
 
     /**

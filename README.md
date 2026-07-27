@@ -39,6 +39,33 @@ BrandContext::runFor('acme', function () {
 });
 ```
 
+## Public routes
+
+Links in an e-mail are opened without a session, so no brand is current and the
+fail-closed scope hides the record the link points at. The brand comes from the
+token instead:
+
+```php
+use Goldnead\BrandContext\Http\Middleware\SetBrandFromRouteValue;
+
+Route::get('/confirm/{token}', ConfirmController::class)
+    ->middleware(SetBrandFromRouteValue::class.':'.Subscription::class.',token,token');
+```
+
+The three arguments are the model, the column to look the value up in, and the
+route parameter (or input field) carrying it.
+
+**The column must carry a unique index across all brands.** One token, one
+record, one brand — that is the whole safety argument. If two records answer,
+`brandForUnique()` throws `AmbiguousBrandRecord` rather than guessing, because
+guessing means serving one brand's record to another brand's visitor. Never pass
+a column that is unique only per brand.
+
+Nothing is aborted by the middleware: an unknown value sets no brand, the scope
+stays closed, and the controller produces the response it always produced. And
+the brand is set explicitly on every request — never inherited from the last one,
+which matters the moment the app runs in a long-lived process.
+
 ## Testing
 
 ```bash

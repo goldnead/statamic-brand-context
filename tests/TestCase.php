@@ -23,6 +23,9 @@ abstract class TestCase extends Orchestra
             $table->unsignedBigInteger('brand_id')->nullable();
             $table->string('email')->nullable();
             $table->string('handle')->nullable();
+            // Globally unique, like a confirmation or unsubscribe token: this is
+            // the precondition that makes deriving a brand from it safe.
+            $table->string('token')->nullable()->unique();
             $table->timestamps();
             $table->unique(['brand_id', 'email']);
         });
@@ -42,6 +45,10 @@ abstract class TestCase extends Orchestra
 
     protected function defineEnvironment($app): void
     {
+        // The public-route tests run through the real `web` group, which
+        // encrypts cookies and therefore needs a key.
+        $app['config']->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
+
         $app['config']->set('database.default', 'testing');
         $app['config']->set('database.connections.testing', [
             'driver' => 'sqlite',
