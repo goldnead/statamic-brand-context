@@ -8,7 +8,11 @@
 - `pushMiddlewareToGroup` always appends, which is how it ended up there. The group is now rebuilt with the middleware spliced in directly before `SubstituteBindings`, falling back to appending when that middleware is absent.
 - **The isolation is unchanged**, and that was verified rather than assumed: with the owning brand active the bound route answers 200, and the same record requested under a different brand still answers 404.
 
+### Also in this release
+
+- **`loadViewsFrom` no longer registers a directory that does not exist** (from 2026-07-25, previously untagged). The addon ships no Blade views, so the stale registration made a consumer's `php artisan view:cache` — part of a deploy `optimize` — fail with "directory does not exist".
+
 ### Notes
 
-- Found in the hub QA run, where two addons independently reported every detail page as 404.
+- The binding fix was found in the hub QA run, where two addons independently reported every detail page as 404.
 - Suite: **20 passed (33 assertions)**.
