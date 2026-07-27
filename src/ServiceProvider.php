@@ -6,6 +6,7 @@ use Goldnead\BrandContext\Contracts\BrandTokenResolver;
 use Goldnead\BrandContext\Http\Middleware\ResolveBrandFromToken;
 use Goldnead\BrandContext\Http\Middleware\SetBrandFromSession;
 use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\ServiceProvider as BaseServiceProvider;
 
 class ServiceProvider extends BaseServiceProvider
@@ -37,6 +38,31 @@ class ServiceProvider extends BaseServiceProvider
         $this->registerControlPanel();
     }
 
+    /**
+     * Places SetBrandFromSession directly before SubstituteBindings in a group,
+     * falling back to appending when that middleware is not present.
+     */
+    protected function insertBeforeBindings(string $group): void
+    {
+        $router = $this->app['router'];
+        $stack = $router->getMiddlewareGroups()[$group] ?? [];
+
+        if (in_array(SetBrandFromSession::class, $stack, true)) {
+            return;
+        }
+
+        $at = array_search(SubstituteBindings::class, $stack, true);
+
+        if ($at === false) {
+            $router->pushMiddlewareToGroup($group, SetBrandFromSession::class);
+
+            return;
+        }
+
+        array_splice($stack, $at, 0, [SetBrandFromSession::class]);
+        $router->middlewareGroup($group, $stack);
+    }
+
     protected function registerMiddleware(): void
     {
         $router = $this->app['router'];
@@ -61,11 +87,17 @@ class ServiceProvider extends BaseServiceProvider
         }
 
         // Every CP request must resolve the active brand from the session,
-        // otherwise the fail-closed scope hides all data. The same middleware
-        // also hands the brand list + current brand to the CP JS. Push after the
-        // app has booted so the statamic.cp middleware group already exists.
+        // otherwise the fail-closed scope hides all data. Registered after the
+        // app has booted, so the statamic.cp group already exists.
+        //
+        // It has to run BEFORE SubstituteBindings. Route-model binding resolves
+        // `{automation}`, `{delivery}` and friends through the query builder; if
+        // no brand is current at that moment the scope fails closed, the lookup
+        // finds nothing and the request dies as a 404 — every edit, delete and
+        // detail page in every addon with bound models. `pushMiddlewareToGroup`
+        // always appends, which put us behind it, so the group is rebuilt.
         $this->app->booted(function () {
-            $this->app['router']->pushMiddlewareToGroup('statamic.cp', SetBrandFromSession::class);
+            $this->insertBeforeBindings('statamic.cp');
         });
 
         // Load the CP brand-switcher bundle (a global Vue component that floats a
