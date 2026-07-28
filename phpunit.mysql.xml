@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    The same suite, against a real MySQL server.
+
+        vendor/bin/pest -c phpunit.mysql.xml
+
+    Needed because the default SQLite run cannot see the class of defect that
+    took statamic-notifications v1.0.3 down on production: InnoDB's 3072-byte
+    index limit, utf8mb4's four bytes per character, fixed column widths and
+    enforced foreign keys do not exist in SQLite. Point DB_HOST/DB_PORT/
+    DB_DATABASE/DB_USERNAME/DB_PASSWORD at a throwaway database; the suite
+    migrates it from scratch on every run.
+
+    This package went without such a file for longer than any of its siblings,
+    which is the wrong way round. It owns `brands` — the table every sibling's
+    `brand_id` migration reads, backfills from and constrains against — and
+    `brand_user`, whose unique spans a column narrowed to 191 characters for
+    exactly the byte-budget reasons SQLite cannot express. Until now there was
+    no way at all to run its suite against the engine those siblings run on,
+    so the foundation of the family was the one part of it never measured on
+    the real thing.
+
+    IndexKeyLengthTest measures the same arithmetic without a server, so CI does
+    not depend on this file. It exists for the run that proves the compiled DDL
+    and the real engine agree.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="./vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true">
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+        <!--
+            The migration path itself, against tables that already hold rows.
+            Every other suite meets a database RefreshDatabase has migrated to
+            head; these install an earlier release, put data in and migrate
+            forward. Present in both configurations on purpose — a unique that
+            constrains nothing and a foreign key that is never checked both look
+            identical on SQLite, and this package's two tables are where the
+            rest of the family reads its brand from.
+        -->
+        <testsuite name="Migrations">
+            <directory>tests/Migrations</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="DB_CONNECTION" value="testing"/>
+        <env name="DB_DRIVER" value="mysql"/>
+        <env name="DB_HOST" value="127.0.0.1"/>
+        <env name="DB_PORT" value="3306"/>
+        <env name="DB_DATABASE" value="brand_context_test"/>
+        <env name="DB_USERNAME" value="root"/>
+        <env name="DB_PASSWORD" value=""/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+    </php>
+</phpunit>

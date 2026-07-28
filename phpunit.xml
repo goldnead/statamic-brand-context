@@ -12,10 +12,34 @@
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
         </testsuite>
+        <!--
+            The migration path itself, against tables that already hold rows.
+            Every other suite meets a database RefreshDatabase has migrated to
+            head; these install an earlier release, put data in and migrate
+            forward. Present in both configurations on purpose — a unique that
+            constrains nothing and a foreign key that is never checked both look
+            identical on SQLite, and this package's two tables are where the
+            rest of the family reads its brand from.
+        -->
+        <testsuite name="Migrations">
+            <directory>tests/Migrations</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>
             <directory>src</directory>
         </include>
     </source>
+    <!--
+        The same three variables the siblings set, and for the same reason: the
+        suite must not pick up a developer's real .env. `DB_CONNECTION=testing`
+        names the connection TestCase::defineEnvironment() configures, which is
+        in-memory SQLite unless DB_DRIVER=mysql says otherwise — see
+        phpunit.mysql.xml. Behaviour is unchanged; it was already all of these.
+    -->
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="DB_CONNECTION" value="testing"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+    </php>
 </phpunit>

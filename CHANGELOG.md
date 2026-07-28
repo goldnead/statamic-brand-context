@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.5.1 — 2026-07-28
+
+### Added — the suite can finally be run against MySQL
+
+This package was the last one in the family with no way to run its tests against the engine its users run. That is the wrong way round. It owns `brands` — the table every sibling's `brand_id` migration reads, backfills from and constrains against — and `brand_user`, whose unique spans a column narrowed to 191 characters for byte-budget reasons SQLite cannot express at all. The foundation of the family was the one part of it never measured on the real thing.
+
+`phpunit.mysql.xml` runs the identical suite against a real server: `DB_DRIVER=mysql`, with the usual `DB_HOST`/`DB_PORT`/`DB_DATABASE`/`DB_USERNAME`/`DB_PASSWORD`. `tests/TestCase::testingConnection()` is the switch, matching the siblings exactly. The default is unchanged in every respect — in-memory SQLite, no setup, nothing to install in CI.
+
+### Added — the migrations are finally tested against a database with data in it
+
+The same sweep that produced the file above, prompted by `statamic-marketing` 1.6.4, looked across all eight addons for a check that runs a migration against tables that already hold rows. It found none. Every migration in every addon had only ever met tables the test created moments earlier, which is the one shape a migration can never be wrong about.
+
+It matters more here than in any sibling, and not because of what could break in this package. `brands` is where four other addons read their tenant from: they backfill their rows onto whatever `is_default` returns and constrain against ids that have to still be there. A migration here that loses a brand, renames one, or lets two share a handle does not show up as a failure in this package. It shows up in four others, as rows attached to a brand that no longer means what they were attached to.
+
+`tests/Migrations/` names no migration. It walks `database/migrations/`, seeds a fresh generation of brands and memberships into every table that already exists before each file runs, and applies them one at a time — so a migration added years from now is covered the day it lands. `tests/Fixtures/released-migrations/` holds the sets as published in 1.4.0 (`brands` alone) and 1.5.0, and the suite installs each, fills it and upgrades forward.
+
+Every check is behavioural. "The migration ran" and "the constraint is there" are not the same statement, and neither is "an index named `brand_user_unique` exists" the same as "this table cannot record the same membership twice" — a unique constrains no NULL on either engine, which is how the same defect has now reached production in two siblings. So nothing here asserts an exit code or an index name. It writes the row the constraint is supposed to refuse and requires the database to refuse it, and it writes the counterpart too: the same user in a *different* brand must still be accepted, which is what a unique rebuilt over `user_id` alone would break while passing everything else.
+
+One case pins something this package has always relied on without ever checking: `create_brands_table` inserts the default brand with `insertOrIgnore`, so re-migrating a populated database must leave that brand with the same id, exactly one row carrying `is_default`, and the handle still unclaimable. Every sibling's backfill resolves its tenant through those three facts.
+
+### Notes
+
+- Suite: **66 passed (170 assertions)** on SQLite, baseline 62. Green against MySQL 8.0 as well, through `phpunit.mysql.xml`, including the new `Migrations` suite.
+- `phpunit.xml` gained the `<php>` block the siblings carry (`APP_ENV`, `DB_CONNECTION=testing`, `QUEUE_CONNECTION=sync`) so a developer's real `.env` cannot reach the suite. It was already all three; now it says so.
+
 ## 1.5.0 — 2026-07-28
 
 ### Added — brand membership for Control Panel users

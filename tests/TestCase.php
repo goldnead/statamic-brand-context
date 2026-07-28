@@ -50,14 +50,51 @@ abstract class TestCase extends Orchestra
         $app['config']->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
 
         $app['config']->set('database.default', 'testing');
-        $app['config']->set('database.connections.testing', [
-            'driver' => 'sqlite',
-            'database' => ':memory:',
-            'prefix' => '',
-        ]);
+        $app['config']->set('database.connections.testing', $this->testingConnection());
 
         // Default to single-brand; individual tests flip this on.
         $app['config']->set('brand-context.multi_brand', false);
+    }
+
+    /**
+     * In-memory SQLite by default, so the suite keeps running anywhere with no
+     * setup. Set `DB_DRIVER=mysql` to point the identical suite at a real MySQL
+     * server instead — see phpunit.mysql.xml.
+     *
+     * SQLite is not a substitute for that run. It has no InnoDB key-length
+     * limit, no utf8mb4 byte arithmetic, no fixed column widths and no real
+     * foreign keys unless they are asked for, which is precisely why a fully
+     * green suite in statamic-notifications let an unbuildable index reach
+     * production. `tests/Unit/IndexKeyLengthTest.php` closes that gap without a
+     * server; this closes it with one.
+     *
+     * It matters more here than in any sibling. This package owns `brands` and
+     * `brand_user` — the tables every sibling's `brand_id` migration reads and
+     * constrains against — and until now there was no way at all to run its
+     * suite against the engine those siblings run on.
+     */
+    protected function testingConnection(): array
+    {
+        if (env('DB_DRIVER', 'sqlite') !== 'mysql') {
+            return [
+                'driver' => 'sqlite',
+                'database' => ':memory:',
+                'prefix' => '',
+            ];
+        }
+
+        return [
+            'driver' => 'mysql',
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '3306'),
+            'database' => env('DB_DATABASE', 'brand_context_test'),
+            'username' => env('DB_USERNAME', 'root'),
+            'password' => env('DB_PASSWORD', ''),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'strict' => true,
+        ];
     }
 
     protected function enableMultiBrand($licenseCheck = null): void
