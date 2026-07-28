@@ -3,10 +3,12 @@
 namespace Goldnead\BrandContext;
 
 use Goldnead\BrandContext\Contracts\BrandTokenResolver;
+use Goldnead\BrandContext\Contracts\UserSource;
 use Goldnead\BrandContext\Http\Middleware\ResolveBrandFromToken;
 use Goldnead\BrandContext\Http\Middleware\SetBrandFromSession;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider as BaseServiceProvider;
 
 class ServiceProvider extends BaseServiceProvider
@@ -19,6 +21,23 @@ class ServiceProvider extends BaseServiceProvider
         $this->app->alias('brand-context', BrandManager::class);
 
         $this->app->bind(BrandTokenResolver::class, DatabaseBrandTokenResolver::class);
+
+        // Who belongs to which brand. A singleton so a host application can
+        // swap the user source once and have every consumer see it.
+        $this->app->singleton('brand-context.members', fn ($app) => new BrandMembership($app['brand-context']));
+        $this->app->alias('brand-context.members', BrandMembership::class);
+
+        $this->app->bind(UserSource::class, StatamicUserSource::class);
+
+        // Registered on `resolving` as well as directly, because the translator
+        // may already be resolved by the time an addon provider registers.
+        $langPath = __DIR__.'/../resources/lang';
+
+        $this->app->resolving('translator', fn ($translator) => $translator->addNamespace('brand-context', $langPath));
+
+        if ($this->app->resolved('translator')) {
+            $this->app['translator']->addNamespace('brand-context', $langPath);
+        }
     }
 
     public function boot(): void
@@ -115,8 +134,49 @@ class ServiceProvider extends BaseServiceProvider
             'hotFile' => public_path('vendor/statamic-brand-context/hot'),
         ]);
 
+        $this->registerMembershipScreen();
+
         $this->publishes([
             __DIR__.'/../resources/dist/build' => public_path('vendor/statamic-brand-context/build'),
         ], 'brand-context-cp');
+
+        $this->publishes([
+            __DIR__.'/../resources/lang' => $this->app->langPath('vendor/brand-context'),
+        ], 'brand-context-translations');
+    }
+
+    /**
+     * The screen that assigns Control Panel users to the current brand.
+     *
+     * Only reachable under multi-brand — the whole call site is inside the
+     * multi-brand guard of registerControlPanel(). A single-brand install has
+     * one brand, so a membership screen there would offer a choice that does
+     * not exist, and every user is a member of it anyway.
+     *
+     * Routes go through Statamic::pushCpRoutes() rather than a route file on an
+     * AddonServiceProvider: this package is a plain Laravel provider on purpose
+     * (it has to boot in a Statamic-less context), and pushCpRoutes is the same
+     * mechanism AddonServiceProvider::registerCpRoutes() uses underneath.
+     */
+    protected function registerMembershipScreen(): void
+    {
+        \Statamic\Statamic::pushCpRoutes(function () {
+            Route::group([], __DIR__.'/../routes/cp.php');
+        });
+
+        \Statamic\Facades\Permission::extend(function () {
+            \Statamic\Facades\Permission::group('brand-context', __('brand-context::messages.permission_group'), function () {
+                \Statamic\Facades\Permission::register('manage brand members')
+                    ->label(__('brand-context::messages.manage_brand_members'));
+            });
+        });
+
+        \Statamic\Facades\CP\Nav::extend(function ($nav) {
+            $nav->create(__('brand-context::messages.nav_brand_members'))
+                ->section('Users')
+                ->route('brand-context.users.index')
+                ->icon('users')
+                ->can('manage brand members');
+        });
     }
 }

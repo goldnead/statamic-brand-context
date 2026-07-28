@@ -1,5 +1,131 @@
 # Changelog
 
+## 1.5.0 — 2026-07-28
+
+### Added — brand membership for Control Panel users
+
+Everything this package isolates so far is an Eloquent model, reached through
+`HasBrand` and a global scope. A Statamic user is not one of those. There is no
+`brand_id` on it, no membership table, no role per brand — and with the file
+users repository it is not a database row at all, so there is nothing for a
+scope to filter.
+
+That wall was hit while building task assignment in LeadHub 1.7.0. The decision
+there was "assignees are the CP users of the respective brand", and it could not
+be built: what shipped is a list of everyone who may see LeadHub, across all
+brands. The work itself is isolated — tasks, filters and "my tasks" do not cross
+the tenant boundary, and that is asserted — but the list of names is too wide.
+The next addon to ask "who from this brand" for a team notification or an
+approval would have hit exactly the same wall, which is why the answer belongs
+here rather than in any one addon.
+
+**A user may belong to several brands**, so the assignment lives in its own
+table (`brand_user`) rather than in a column on the user. The single-brand case
+is one row; the reverse modelling could not express the other case without a
+later migration.
+
+**The user side carries no foreign key.** `user_id` is a `varchar(191)` holding
+`$user->id()` — a uuid under the file driver, a numeric key under the eloquent
+one. A foreign key to `users` would make the addon uninstallable on exactly the
+installs Statamic ships by default. The id is the one thing both drivers agree
+on, and it is the same key `goldnead/statamic-identity-contracts` already
+stringifies as `Identity::$userId`; `attach()` accepts an `Identity` for that
+reason. Everything above the table goes through `Statamic\Facades\User`, so
+neither this package nor its consumers ever learn which driver an install uses.
+
+#### How a consumer uses it
+
+```php
+use Goldnead\BrandContext\Facades\BrandMembers;
+
+$assignees = BrandMembers::usersOf()                     // current brand
+    ->filter(fn ($user) => $user->can('view leadhub'))   // your permission
+    ->map(fn ($user) => ['value' => (string) $user->id(), 'label' => $user->email()]);
+```
+
+Membership is brand affiliation, never authorisation: the permission check stays
+in the consuming addon, the brand affiliation comes from here. The reverse
+question is `BrandMembers::brandsOf($user)`, the predicate is
+`BrandMembers::includes($user, $brand)`, and writes are `attach()` / `detach()`.
+
+#### One rule that had to be surprising
+
+**A user with no membership at all counts as a member of every brand.**
+
+Every install upgrading into this feature starts with an empty table. Filtering
+strictly would empty every assignee dropdown, every team notification and every
+approval list on the day of the upgrade — and it would look like a permissions
+bug, not like a feature: the names are gone, nobody knows why, and the fix is
+invisible. So nothing changes until somebody deliberately assigns a user. The
+*first* assignment for a user is what narrows them down, and it narrows them
+everywhere at once. Removing their last assignment puts them back everywhere;
+there is deliberately no way to say "member of nothing", which is what revoking
+a permission is for.
+
+Because a rule like that decays in one direction — "counts everywhere" quietly
+becoming "may do anything" — it is stated where it is read rather than only
+here: in the README, in the PHPDoc of the class a consumer calls, and on the
+Control Panel screen itself. `BrandMembershipTransitionTest` pins each of its
+edges, including the one that matters most: an unassigned user still cannot see
+another brand's **records**. The rule is about people, never about data, and the
+fail-closed scope is untouched by it.
+
+The raw rows are reachable through `assignedUserIdsOf()` / `assignedBrandIdsOf()`,
+which deliberately do *not* apply the rule and are named so they cannot be
+mistaken for the member list.
+
+#### Where the boundary is, and where it deliberately is not
+
+`brand_user` is the only table in this package with a `brand_id` that does **not**
+use `HasBrand`, and that omission is the considered part of the design. Under
+the global scope, "which brands does this user belong to" could only ever return
+the current brand — the wrong answer with no error — and in a console run or a
+queue worker, where no brand is current, the fail-closed scope would read zero
+membership rows and the transition rule would turn that into "everybody belongs
+everywhere". Ambient scoping would invert the boundary in precisely the contexts
+that have no session to notice.
+
+So the isolation is explicit instead of ambient: every read names the brand id it
+means. For the same reason the API refuses to guess — with multi-brand on and no
+current brand it throws rather than falling back to the default brand, because
+falling back would answer a question about brand B with brand A's memberships.
+
+That this holds is a test, not a screenshot: a membership of one brand is neither
+visible nor effective in another, deleting from one brand leaves the other's row
+alone, and the Control Panel endpoint writes to the current brand while ignoring
+any brand the request names.
+
+#### Control Panel
+
+**Users → Brand Members**, visible only in multi-brand mode (a single-brand
+install has one brand and everybody is in it). Assign and remove per user; the
+screen always acts on the brand in the switcher, which is why it has no brand
+field to tamper with. Rejections are shown — inline at the row and in a summary
+above it — following the pattern marketing 1.5.3 established, so a refused
+action never reads as a dead button. Guarded by a new `manage brand members`
+permission.
+
+### Also in this release
+
+- **`tests/Unit/IndexKeyLengthTest.php`**, adopted from notifications 1.0.4 —
+  it compiles the addon's own migrations through Laravel's MySQL grammar in
+  pretend mode and measures every index without a server. brand-context acquired
+  the same exposure the moment it gained a unique over a string user id: under
+  utf8mb4 a `varchar(255)` costs 1020 bytes in an index and InnoDB allows 3072,
+  and SQLite has none of that arithmetic to fail on. `user_id` is capped at 191
+  for that reason — 772 bytes for the whole key, with room to spare.
+- The same test asserts that both columns of `brand_user_unique` are NOT NULL. A
+  unique index does not constrain NULLs, so a nullable `user_id` would let the
+  index sit there enforcing nothing — a defect that has already shipped twice in
+  this family (notifications, automations). Here the unique *is* the membership,
+  so it would have permitted unlimited duplicates.
+
+### Notes
+
+- Suite: **62 passed (143 assertions)**, up from 32.
+- Not included on purpose: the consumption side in LeadHub. This release ends at
+  the API.
+
 ## 1.4.0 — 2026-07-27
 
 ### Added — deriving the brand from a public token

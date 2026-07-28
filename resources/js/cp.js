@@ -8,6 +8,7 @@
  * which the SetBrandFromSession middleware resolves + persists.
  */
 import BrandSwitcher from './BrandSwitcher.vue';
+import Users from './pages/Users.vue';
 
 Statamic.booting(() => {
     // Guard: a switcher failure must never crash the whole CP (it runs inside
@@ -19,4 +20,8 @@ Statamic.booting(() => {
     } catch (e) {
         console.error('[brand-context] brand switcher failed to mount:', e);
     }
+
+    // The membership screen. The identifier must match the Inertia::render()
+    // call in BrandUserController exactly.
+    Statamic.$inertia.register('brand-context::Users', Users);
 });
