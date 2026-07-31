@@ -24,6 +24,10 @@ jobs:
         php: ['8.2', '8.3', '8.4']
         laravel: ['^12.40', '^13.0']
         stability: [prefer-stable]
+        exclude:
+          # Laravel 13 requires PHP ^8.3, so this cell can never resolve.
+          - php: '8.2'
+            laravel: '^13.0'
         include:
           # The lowest supported end of the range is where an unstated
           # dependency assumption shows up first.

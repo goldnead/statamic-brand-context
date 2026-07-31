@@ -35,6 +35,15 @@ The first CI run this package ever had is what surfaced it — every Laravel 11 
 dependency resolution while every Laravel 12 cell passed. That is precisely the class of untrue
 support claim a single-combination test run cannot see.
 
+The second run found the rest of the same class:
+
+- `pestphp/pest` and `pestphp/pest-plugin-laravel` were pinned to `^2.0|^3.0`, neither of which
+  supports Laravel 13. They now allow `^3.0|^4.0|^5.0`; the suite runs unchanged on Pest 5.
+- `pixelfear/composer-dist-plugin` arrives with the lowest `statamic/cms` versions and was not in
+  `config.allow-plugins`, so a `prefer-lowest` install aborted. It is allowed now.
+- Laravel 13 requires PHP ^8.3, so the PHP 8.2 × Laravel 13 cell is excluded from the matrix rather
+  than left to fail.
+
 ### Fixed — `inertiajs/inertia-laravel` was never declared
 
 `Http/Controllers/Cp/BrandUserController` imports `Inertia\Inertia` and the package only ever got it
