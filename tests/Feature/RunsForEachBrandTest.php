@@ -4,6 +4,7 @@ use Goldnead\BrandContext\Concerns\RunsForEachBrand;
 use Goldnead\BrandContext\Facades\BrandContext;
 use Goldnead\BrandContext\Models\Brand;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Console\Kernel;
 
 /**
  * The failure this trait exists for is silent: a scheduled command that reports
@@ -29,7 +30,7 @@ class ProbeCommand extends Command
 
 beforeEach(function (): void {
     ProbeCommand::$seen = [];
-    $this->app[\Illuminate\Contracts\Console\Kernel::class]->registerCommand(new ProbeCommand);
+    $this->app[Kernel::class]->registerCommand(new ProbeCommand);
 });
 
 it('runs once in the ambient context when multi-brand is off', function (): void {

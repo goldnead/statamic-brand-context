@@ -5,6 +5,7 @@ namespace Goldnead\BrandContext\Http\Controllers\Cp;
 use Goldnead\BrandContext\BrandManager;
 use Goldnead\BrandContext\BrandMembership;
 use Goldnead\BrandContext\Contracts\UserSource;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller as BaseController;
 use Inertia\Inertia;
@@ -60,7 +61,7 @@ class BrandUserController extends BaseController
 
         $userId = $this->validateUser($request);
 
-        if ($userId instanceof \Illuminate\Http\RedirectResponse) {
+        if ($userId instanceof RedirectResponse) {
             return $userId;
         }
 
@@ -75,7 +76,7 @@ class BrandUserController extends BaseController
 
         $userId = $this->validateUser($request);
 
-        if ($userId instanceof \Illuminate\Http\RedirectResponse) {
+        if ($userId instanceof RedirectResponse) {
             return $userId;
         }
 
@@ -92,7 +93,7 @@ class BrandUserController extends BaseController
      * and clicking the button. Without a message the row would simply refuse to
      * change state, which reads as a broken toggle.
      */
-    protected function validateUser(Request $request): string|\Illuminate\Http\RedirectResponse
+    protected function validateUser(Request $request): string|RedirectResponse
     {
         $data = $request->validate([
             'user_id' => ['required', 'string', 'max:191'],

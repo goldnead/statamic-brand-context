@@ -2,12 +2,14 @@
 
 namespace Goldnead\BrandContext\Contracts;
 
+use Goldnead\BrandContext\BrandMembership;
+use Goldnead\BrandContext\StatamicUserSource;
 use Illuminate\Support\Collection;
 
 /**
  * Where the list of Control Panel users comes from.
  *
- * Bound to {@see \Goldnead\BrandContext\StatamicUserSource}, which asks
+ * Bound to {@see StatamicUserSource}, which asks
  * `Statamic\Facades\User` and therefore works with the file users repository
  * and the eloquent one alike — that repository is the abstraction, so this
  * package never needs to know which driver an install uses.
@@ -23,7 +25,7 @@ interface UserSource
      *
      * Elements are Statamic user objects (`id()`, `email()`, `name()`); a
      * substitute implementation may return anything from which
-     * {@see \Goldnead\BrandContext\BrandMembership::userId()} can read an id.
+     * {@see BrandMembership::userId()} can read an id.
      *
      * @return Collection<int, object>
      */

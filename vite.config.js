@@ -13,6 +13,10 @@ export default defineConfig({
         laravel({
             input: ['resources/js/cp.js'],
             publicDirectory: 'resources/dist',
+            // Must match the hotFile the provider hands to Statamic::vite(), otherwise
+            // `npm run dev` writes a hot file the Control Panel never looks at and HMR
+            // silently does nothing.
+            hotFile: 'resources/dist/hot',
             refresh: true,
         }),
         // Externalises `vue` to the CP runtime and resolves @statamic/cms/*

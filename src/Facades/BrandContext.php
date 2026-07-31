@@ -2,6 +2,7 @@
 
 namespace Goldnead\BrandContext\Facades;
 
+use Goldnead\BrandContext\BrandManager;
 use Illuminate\Support\Facades\Facade;
 
 /**
@@ -18,7 +19,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static bool scopeIsDisabled()
  * @method static string failMode()
  *
- * @see \Goldnead\BrandContext\BrandManager
+ * @see BrandManager
  */
 class BrandContext extends Facade
 {

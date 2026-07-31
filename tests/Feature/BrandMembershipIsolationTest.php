@@ -1,5 +1,6 @@
 <?php
 
+use Goldnead\BrandContext\Contracts\UserSource;
 use Goldnead\BrandContext\Facades\BrandMembers;
 use Goldnead\BrandContext\Http\Controllers\Cp\BrandUserController;
 use Goldnead\BrandContext\Models\Brand;
@@ -8,6 +9,7 @@ use Goldnead\BrandContext\Scopes\BrandScope;
 use Goldnead\BrandContext\Tests\Fixtures\FakeUser;
 use Goldnead\BrandContext\Tests\Fixtures\FakeUserSource;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * Membership is a security surface: it decides who a brand may hand work to,
@@ -76,7 +78,7 @@ it('leaves brand_user out of the global scope on purpose', function () {
 });
 
 it('writes the membership to the current brand and ignores any brand the request names', function () {
-    app()->instance(\Goldnead\BrandContext\Contracts\UserSource::class, new FakeUserSource([new FakeUser('u-1')]));
+    app()->instance(UserSource::class, new FakeUserSource([new FakeUser('u-1')]));
 
     app('brand-context')->setCurrent($this->a);
 
@@ -98,7 +100,7 @@ it('writes the membership to the current brand and ignores any brand the request
 });
 
 it('will not remove another brand\'s membership from the screen of this one', function () {
-    app()->instance(\Goldnead\BrandContext\Contracts\UserSource::class, new FakeUserSource([new FakeUser('u-1')]));
+    app()->instance(UserSource::class, new FakeUserSource([new FakeUser('u-1')]));
 
     BrandMembers::attach('u-1', $this->b);
     app('brand-context')->setCurrent($this->a);
@@ -116,7 +118,7 @@ it('will not remove another brand\'s membership from the screen of this one', fu
 });
 
 it('refuses the screen to a user without the permission', function () {
-    app()->instance(\Goldnead\BrandContext\Contracts\UserSource::class, new FakeUserSource([new FakeUser('u-1')]));
+    app()->instance(UserSource::class, new FakeUserSource([new FakeUser('u-1')]));
 
     app('brand-context')->setCurrent($this->a);
 
@@ -124,13 +126,13 @@ it('refuses the screen to a user without the permission', function () {
     $request->setUserResolver(fn () => new FakeUser('nobody', 'nobody@example.com'));
 
     expect(fn () => app(BrandUserController::class)->store($request))
-        ->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class);
+        ->toThrow(HttpException::class);
 
     expect(BrandUser::query()->count())->toBe(0);
 });
 
 it('says why a rejected assignment was rejected instead of failing silently', function () {
-    app()->instance(\Goldnead\BrandContext\Contracts\UserSource::class, new FakeUserSource([new FakeUser('u-1')]));
+    app()->instance(UserSource::class, new FakeUserSource([new FakeUser('u-1')]));
 
     app('brand-context')->setCurrent($this->a);
 

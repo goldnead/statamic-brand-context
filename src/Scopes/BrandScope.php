@@ -2,7 +2,6 @@
 
 namespace Goldnead\BrandContext\Scopes;
 
-use Goldnead\BrandContext\Facades\BrandContext;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Scope;

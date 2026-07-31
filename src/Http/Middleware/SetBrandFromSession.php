@@ -5,6 +5,7 @@ namespace Goldnead\BrandContext\Http\Middleware;
 use Closure;
 use Goldnead\BrandContext\Models\Brand;
 use Illuminate\Http\Request;
+use Statamic\Statamic;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
@@ -75,7 +76,7 @@ class SetBrandFromSession
      */
     protected function provideToScript($manager): void
     {
-        if (! class_exists(\Statamic\Statamic::class)) {
+        if (! class_exists(Statamic::class)) {
             return;
         }
 
@@ -87,7 +88,7 @@ class SetBrandFromSession
                 ->values()
                 ->all();
 
-            \Statamic\Statamic::provideToScript([
+            Statamic::provideToScript([
                 'brandContext' => [
                     'brands' => $brands,
                     'current' => $manager->currentId(),

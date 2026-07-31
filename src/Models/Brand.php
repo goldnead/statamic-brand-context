@@ -2,6 +2,7 @@
 
 namespace Goldnead\BrandContext\Models;
 
+use Goldnead\BrandContext\Database\Factories\BrandFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -35,6 +36,6 @@ class Brand extends Model
 
     protected static function newFactory()
     {
-        return \Goldnead\BrandContext\Database\Factories\BrandFactory::new();
+        return BrandFactory::new();
     }
 }

@@ -1,5 +1,72 @@
 # Changelog
 
+## 1.6.0 — 2026-07-31
+
+The release that makes this package installable by someone who is not its author. Six sibling addons
+hard-require it, and Composer ignores a dependency's own `repositories` block, so until this package
+resolves from Packagist with a licence behind its licence field, none of them can be installed at all.
+Everything below follows from that, plus the first pass of the Statamic Addon Studio standards.
+
+### Added — the things a published package needs
+
+- **`LICENSE.md`.** `composer.json` has declared MIT since the first tag with no licence text behind it.
+- **CI.** The package every sibling depends on had none. `.github/workflows/tests.yml` runs the suite
+  across PHP 8.2–8.4 × Laravel 11–12 plus a `prefer-lowest` cell, runs the identical suite against a
+  real MySQL 8 service, checks formatting, and rebuilds `resources/dist` to fail on a stale bundle.
+  That last job matters here: the built CP bundle is committed because consumers install with
+  Composer and have no Node toolchain, so nothing else would have caught a source change that never
+  reached the bundle.
+- **`pint.json`** and `composer lint` / `lint:test`. Formatting is now checked, never auto-committed
+  onto a branch.
+- **`.gitattributes`.** The 66-test suite, the MySQL config, the Vite sources and the CI definitions
+  no longer travel to every site that installs the package.
+- **README Install and Requirements sections**, the publish-tag table, and the note that
+  `npm install` needs `composer install` first because `@statamic/cms` resolves from `vendor/`.
+
+### Fixed — `inertiajs/inertia-laravel` was never declared
+
+`Http/Controllers/Cp/BrandUserController` imports `Inertia\Inertia` and the package only ever got it
+transitively through `statamic/cms`. It is now a real `require` at `^2.0`, matching what Statamic 6
+itself requires.
+
+### Fixed — the Vite hot file pointed somewhere Vite never writes
+
+The provider told Statamic to look for the dev-server hot file at
+`public_path('vendor/statamic-brand-context/hot')` while Vite writes it next to the bundle it builds.
+The two never met, so `npm run dev` silently did nothing and every CP change needed a full rebuild.
+Both sides now agree on `resources/dist/hot`, and that path is git-ignored — a committed hot file
+points an installed site's Control Panel at a dev server that does not exist.
+
+### Changed — removing a user from a brand is confirmed
+
+Assigning stays a single click; removing now asks first, the same asymmetry core applies to every
+destructive action. Losing brand access is not recoverable from this screen: the user drops out of
+every brand-scoped listing, and if it was their only membership they fall back to counting as a
+member of *every* brand, which is a different state than they were in before.
+
+### Changed — the Brand Members screen is actually translatable
+
+Every string on it was an English literal passed to `__()`, so a German Control Panel rendered the
+whole screen in English. They are now `brand-context::messages.*` keys with both `en` and `de`
+translations. The screen also has an empty state instead of an empty bordered card.
+
+### Changed — the middleware fallback is no longer silent
+
+`insertBeforeBindings()` falls back to appending when `SubstituteBindings` is not in the group. That
+fallback reintroduces exactly the bug the method exists to prevent — the brand resolves after
+route-model binding, so every bound CP route in every dependent addon 404s. It now throws in `local`
+and `testing` and reports in production, rather than looking like a bug in whichever addon notices
+first.
+
+### Notes
+
+- Suite: **66 passed (170 assertions)**, unchanged. This release adds no behaviour to test beyond the
+  CP screen, which has no test harness of its own yet — see below.
+- Known gaps, deliberately not addressed here: `BrandSwitcher.vue` still teleports into the CP header
+  by querying `header > div:last-of-type` and still probes three `Statamic.$config` shapes, of which
+  at most one is real; the Brand Members controller still loads every CP user with no pagination or
+  search; there are no Vue component tests and no listing screenshots.
+
 ## 1.5.1 — 2026-07-28
 
 ### Added — the suite can finally be run against MySQL

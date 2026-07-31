@@ -3,6 +3,7 @@
 use Goldnead\BrandContext\Facades\BrandContext;
 use Goldnead\BrandContext\Models\Brand;
 use Goldnead\BrandContext\Tests\Fixtures\Widget;
+use Illuminate\Database\QueryException;
 
 beforeEach(function () {
     $this->enableMultiBrand();
@@ -58,7 +59,7 @@ it('allows the same email across brands but enforces uniqueness within a brand',
     BrandContext::runFor($this->brandA, function () {
         Widget::create(['email' => 'same@example.com']);
     });
-})->throws(Illuminate\Database\QueryException::class);
+})->throws(QueryException::class);
 
 it('withoutBrandScope sees all brands (explicit admin op)', function () {
     BrandContext::runFor($this->brandA, fn () => Widget::create(['email' => 'a@example.com']));

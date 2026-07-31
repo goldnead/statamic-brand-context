@@ -2,13 +2,14 @@
 
 namespace Goldnead\BrandContext\Facades;
 
+use Goldnead\BrandContext\BrandMembership;
 use Illuminate\Support\Facades\Facade;
 
 /**
  * Brand membership of Control Panel users — the answer to "who belongs to this
  * brand".
  *
- * Read {@see \Goldnead\BrandContext\BrandMembership} before using it: a user
+ * Read {@see BrandMembership} before using it: a user
  * with no membership at all counts as a member of **every** brand, so that
  * existing installs do not lose every name in every list on upgrade.
  *
@@ -23,7 +24,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static bool detach(object|string|int $user, \Goldnead\BrandContext\Models\Brand|int|string|null $brand = null)
  * @method static string userId(object|string|int $user)
  *
- * @see \Goldnead\BrandContext\BrandMembership
+ * @see BrandMembership
  */
 class BrandMembers extends Facade
 {

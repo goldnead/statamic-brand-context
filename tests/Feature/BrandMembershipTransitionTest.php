@@ -3,6 +3,7 @@
 use Goldnead\BrandContext\Facades\BrandMembers;
 use Goldnead\BrandContext\Models\Brand;
 use Goldnead\BrandContext\Tests\Fixtures\FakeUser;
+use Goldnead\BrandContext\Tests\Fixtures\Widget;
 
 /**
  * The transition rule, pinned.
@@ -93,13 +94,13 @@ it('does not let the rule leak out of membership into the record scope', functio
     $widgetA = null;
 
     app('brand-context')->runFor($this->brands['a'], function () use (&$widgetA) {
-        $widgetA = \Goldnead\BrandContext\Tests\Fixtures\Widget::create(['email' => 'a@example.com']);
+        $widgetA = Widget::create(['email' => 'a@example.com']);
     });
 
     expect(BrandMembers::includes('never-assigned', $this->brands['b']))->toBeTrue();
 
     app('brand-context')->runFor($this->brands['b'], function () use ($widgetA) {
-        expect(\Goldnead\BrandContext\Tests\Fixtures\Widget::find($widgetA->id))->toBeNull()
-            ->and(\Goldnead\BrandContext\Tests\Fixtures\Widget::count())->toBe(0);
+        expect(Widget::find($widgetA->id))->toBeNull()
+            ->and(Widget::count())->toBe(0);
     });
 });

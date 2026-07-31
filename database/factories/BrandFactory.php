@@ -4,6 +4,7 @@ namespace Goldnead\BrandContext\Database\Factories;
 
 use Goldnead\BrandContext\Models\Brand;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 class BrandFactory extends Factory
 {
@@ -14,7 +15,7 @@ class BrandFactory extends Factory
         $name = $this->faker->unique()->company();
 
         return [
-            'handle' => \Illuminate\Support\Str::slug($name),
+            'handle' => Str::slug($name),
             'name' => $name,
             'is_default' => false,
             'settings' => null,

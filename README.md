@@ -8,6 +8,69 @@ Optional multi-brand (multi-tenant) foundation for Statamic addons.
 
 The database schema is identical in both modes (`brand_id` everywhere, backfilled to the default brand), so enabling multi-brand later needs no migration.
 
+## Requirements
+
+| | |
+|---|---|
+| PHP | 8.2 or newer |
+| Laravel | 11, 12 or 13 |
+| Statamic | 6.0 or newer |
+| Database | Any Laravel-supported driver. The migrations are verified against MySQL 8 in CI; SQLite has no InnoDB key-length limit and is not a substitute for that run. |
+
+The Control-Panel surface (brand switcher, Brand Members screen) needs Statamic. The rest of the
+package boots in a plain Laravel application without it.
+
+## Installation
+
+```bash
+composer require goldnead/statamic-brand-context
+php artisan migrate
+```
+
+That is the whole install for single-brand mode. The default brand is created by the migration and
+the global scope is a no-op, so nothing changes visibly.
+
+To enable multi-brand, publish the config and flip the flag:
+
+```bash
+php artisan vendor:publish --tag=brand-context-config
+```
+
+```php
+// config/brand-context.php
+'multi_brand' => true,
+```
+
+**The flag is read once at boot.** Changing it takes effect on the next request, and on a deployed
+site you need `php artisan config:clear` if the config is cached.
+
+The Control-Panel assets are published automatically by Statamic. If you have disabled that, or the
+switcher does not appear after an upgrade:
+
+```bash
+php artisan vendor:publish --tag=brand-context-cp --force
+```
+
+### Publish tags
+
+| Tag | What it publishes |
+|---|---|
+| `brand-context-config` | `config/brand-context.php` |
+| `brand-context-migrations` | The `brands` and `brand_user` migrations, if you want to edit them |
+| `brand-context-cp` | The built Control-Panel bundle |
+| `brand-context-translations` | `lang/vendor/brand-context/{en,de}` |
+
+### Building the Control-Panel assets
+
+Only needed when working on this package itself. `@statamic/cms` resolves from the installed vendor
+directory, so Composer must run first:
+
+```bash
+composer install
+npm install
+npm run build      # writes resources/dist/build, which is committed
+```
+
 ## Concepts
 
 - **`Brand` model** — the tenant. Not itself scoped; brands are the scoping root. A default brand always exists.

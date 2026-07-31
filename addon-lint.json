@@ -1,0 +1,10 @@
+{
+    "_why": {
+        "testing.addon-testcase": "This package is a plain Laravel provider on purpose: it has to boot in a Statamic-less application, and the CP surface is guarded behind class_exists(Statamic::class). Statamic\\Testing\\AddonTestCase boots Statamic unconditionally, which would make it impossible to test the very path that matters most here. tests/TestCase.php extends Orchestra directly and adds the MySQL connection switch the sibling migrations depend on. Revisit if the package ever stops supporting Statamic-less boot.",
+        "ui.command-palette": "The Brand Members screen has no page-level primary action. Its actions are per-row assign/remove toggles, which are not palette candidates. Reinstate this rule if the screen ever grows a header action."
+    },
+    "disable": [
+        "testing.addon-testcase",
+        "ui.command-palette"
+    ]
+}

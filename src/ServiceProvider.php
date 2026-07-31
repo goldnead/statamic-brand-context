@@ -6,10 +6,12 @@ use Goldnead\BrandContext\Contracts\BrandTokenResolver;
 use Goldnead\BrandContext\Contracts\UserSource;
 use Goldnead\BrandContext\Http\Middleware\ResolveBrandFromToken;
 use Goldnead\BrandContext\Http\Middleware\SetBrandFromSession;
-use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider as BaseServiceProvider;
+use Statamic\Facades\CP\Nav;
+use Statamic\Facades\Permission;
+use Statamic\Statamic;
 
 class ServiceProvider extends BaseServiceProvider
 {
@@ -78,6 +80,23 @@ class ServiceProvider extends BaseServiceProvider
         $at = array_search(SubstituteBindings::class, $stack, true);
 
         if ($at === false) {
+            // Appending is the only thing left to do, but it reintroduces exactly the bug this
+            // method exists to prevent: the brand is resolved after route-model binding, so every
+            // bound lookup in every dependent addon fails closed and 404s. Silence here would make
+            // that look like an addon bug rather than a middleware-ordering one.
+            $message = sprintf(
+                'brand-context: SubstituteBindings was not found in the [%s] middleware group, so '
+                .'SetBrandFromSession had to be appended. Route-model binding now runs before the '
+                .'brand is resolved, which makes bound Control Panel routes 404 in multi-brand mode.',
+                $group
+            );
+
+            if ($this->app->environment('local', 'testing')) {
+                throw new \RuntimeException($message);
+            }
+
+            report(new \RuntimeException($message));
+
             $router->pushMiddlewareToGroup($group, SetBrandFromSession::class);
 
             return;
@@ -102,7 +121,7 @@ class ServiceProvider extends BaseServiceProvider
      */
     protected function registerControlPanel(): void
     {
-        if (! class_exists(\Statamic\Statamic::class)) {
+        if (! class_exists(Statamic::class)) {
             return;
         }
 
@@ -128,10 +147,13 @@ class ServiceProvider extends BaseServiceProvider
         // brand selector into the top-right of the CP header — the supported way,
         // since Statamic exposes no addon slot for the native user menu/topbar).
         // Built into resources/dist/build, published to public/vendor/….
-        \Statamic\Statamic::vite('statamic-brand-context', [
+        Statamic::vite('statamic-brand-context', [
             'buildDirectory' => 'vendor/statamic-brand-context/build',
             'input' => ['resources/js/cp.js'],
-            'hotFile' => public_path('vendor/statamic-brand-context/hot'),
+            // The package's own path, not public_path(): `npm run dev` writes the hot file next to
+            // the bundle it builds (vite.config.js sets the same path). Pointing at public_path()
+            // meant the CP looked somewhere Vite never writes, so HMR silently did nothing.
+            'hotFile' => __DIR__.'/../resources/dist/hot',
         ]);
 
         $this->registerMembershipScreen();
@@ -160,18 +182,18 @@ class ServiceProvider extends BaseServiceProvider
      */
     protected function registerMembershipScreen(): void
     {
-        \Statamic\Statamic::pushCpRoutes(function () {
+        Statamic::pushCpRoutes(function () {
             Route::group([], __DIR__.'/../routes/cp.php');
         });
 
-        \Statamic\Facades\Permission::extend(function () {
-            \Statamic\Facades\Permission::group('brand-context', __('brand-context::messages.permission_group'), function () {
-                \Statamic\Facades\Permission::register('manage brand members')
+        Permission::extend(function () {
+            Permission::group('brand-context', __('brand-context::messages.permission_group'), function () {
+                Permission::register('manage brand members')
                     ->label(__('brand-context::messages.manage_brand_members'));
             });
         });
 
-        \Statamic\Facades\CP\Nav::extend(function ($nav) {
+        Nav::extend(function ($nav) {
             $nav->create(__('brand-context::messages.nav_brand_members'))
                 ->section('Users')
                 ->route('brand-context.users.index')

@@ -2,6 +2,7 @@
 
 namespace Goldnead\BrandContext\Models;
 
+use Goldnead\BrandContext\BrandMembership;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -27,7 +28,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *    the answer in precisely the contexts that have no session.
  *
  * The isolation is therefore not ambient but explicit: every read in
- * {@see \Goldnead\BrandContext\BrandMembership} names the brand id it means, so
+ * {@see BrandMembership} names the brand id it means, so
  * the boundary is in the query rather than in the request state. Tests pin both
  * halves — that the scope is absent, and that a membership of one brand is
  * neither visible nor effective in another.
