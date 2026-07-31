@@ -23,6 +23,18 @@ Everything below follows from that, plus the first pass of the Statamic Addon St
 - **README Install and Requirements sections**, the publish-tag table, and the note that
   `npm install` needs `composer install` first because `@statamic/cms` resolves from `vendor/`.
 
+### Fixed — the declared Laravel range was never installable
+
+`laravel/framework` was declared as `^11.0|^12.0|^13.0`. Statamic 6 requires `^12.40.0 || ^13.0`, so
+the Laravel 11 half of that promise could never resolve on a Statamic 6 site, and by now every
+Laravel 11 release carries a security advisory that Composer blocks by default anyway. The constraint
+is now `^12.40|^13.0`, and `orchestra/testbench` drops `^8.0|^9.0` for the same reason: those target
+Laravel 10 and 11.
+
+The first CI run this package ever had is what surfaced it — every Laravel 11 cell failed at
+dependency resolution while every Laravel 12 cell passed. That is precisely the class of untrue
+support claim a single-combination test run cannot see.
+
 ### Fixed — `inertiajs/inertia-laravel` was never declared
 
 `Http/Controllers/Cp/BrandUserController` imports `Inertia\Inertia` and the package only ever got it

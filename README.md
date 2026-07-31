@@ -13,7 +13,7 @@ The database schema is identical in both modes (`brand_id` everywhere, backfille
 | | |
 |---|---|
 | PHP | 8.2 or newer |
-| Laravel | 11, 12 or 13 |
+| Laravel | 12.40 or newer, or 13 — the range `statamic/cms` ^6.0 itself allows |
 | Statamic | 6.0 or newer |
 | Database | Any Laravel-supported driver. The migrations are verified against MySQL 8 in CI; SQLite has no InnoDB key-length limit and is not a substitute for that run. |
 
