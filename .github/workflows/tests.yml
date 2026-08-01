@@ -29,10 +29,17 @@ jobs:
           - php: '8.2'
             laravel: '^13.0'
         include:
-          # The lowest supported end of the range is where an unstated
-          # dependency assumption shows up first.
+          # The lowest end of each Laravel line is where an unstated dependency
+          # assumption shows up first. Every cell below was resolved with
+          # `composer update --dry-run` before it was committed; a matrix that
+          # does not resolve is worse than no matrix.
+          #   8.2 · ^12.40 · lowest → laravel 12.61.1, testbench 10.0.0, cms 6.21.0
+          #   8.3 · ^13.0  · lowest → laravel 13.12.0, testbench 11.0.0, cms 6.21.0
           - php: '8.2'
             laravel: '^12.40'
+            stability: prefer-lowest
+          - php: '8.3'
+            laravel: '^13.0'
             stability: prefer-lowest
 
     steps:
