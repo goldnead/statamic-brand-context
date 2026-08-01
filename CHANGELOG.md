@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **PHPStan (Larastan) at level 5**, with `phpstan-baseline.neon` committed. The baseline holds the
+  eight findings that already existed; new code has to pass without adding to it. `composer analyse`,
+  and a CI step next to Pint.
+- **A Vitest suite for the two Vue components** — the only part of the package no PHP test can
+  reach, and one of them (`BrandSwitcher`) renders on every single Control Panel page. Thirteen
+  tests, run in CI. The one that earns its keep covers the teleport fallback: the switcher is placed
+  by querying core's own header markup, and if that markup ever changes the fallback is the only
+  thing standing between a multi-brand user and no way to change brand.
+- **`SECURITY.md`** with a private reporting address, and a support-policy sentence in the README.
+
+### Fixed
+
+- **The brand switcher read its config through four different code paths**, three of which do not
+  exist in Statamic 6. They could not all be right, and the wrong ones turned "the data never
+  arrived" into a switcher that is quietly absent. It now reads `config.get('brandContext')` from
+  `@statamic/cms/api` — the one supported path — and logs an actionable error when it comes back
+  empty.
+- **The switcher's two remaining strings were English literals inside `__()`.** `Switch brand` and
+  `Brand` now resolve through `brand-context::messages`, so a German Control Panel gets German.
+
+### Changed
+
+- `extra.statamic.developer-url` points at `https://gldnr.studio`, matching the rest of the addon
+  family.
+- `.gitattributes` also export-ignores `phpstan.neon`, `phpstan-baseline.neon`, `addon-lint.json`
+  and `vitest.config.js`.
+- CI checks out with `persist-credentials: false` and installs Node dependencies with `npm ci`
+  rather than `npm install`.
+
 ## 1.6.0 — 2026-07-31
 
 The release that makes this package installable by someone who is not its author. Six sibling addons

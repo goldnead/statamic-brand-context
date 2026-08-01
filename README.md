@@ -196,5 +196,24 @@ which matters the moment the app runs in a long-lived process.
 
 ```bash
 composer install
-composer test
+composer test          # Pest, SQLite
+composer test:mysql    # the same suite against MySQL — needs a running server
+composer lint:test     # Pint, check only
+composer analyse       # PHPStan level 5, baselined
+npm ci && npm test     # the two Vue components
 ```
+
+CI runs all of it on every push, plus a job that rebuilds `resources/dist` and fails if the
+committed bundle has drifted from its sources.
+
+## Support
+
+Only the latest version of this addon is supported, against the Statamic major it targets. Bugs and
+questions go to [GitHub issues](https://github.com/goldnead/statamic-brand-context/issues); bugs in
+Statamic itself belong in [statamic/cms](https://github.com/statamic/cms/issues).
+
+Security reports do not go into a public issue — see [SECURITY.md](SECURITY.md).
+
+## Changelog and license
+
+[CHANGELOG.md](CHANGELOG.md) · MIT, see [LICENSE.md](LICENSE.md).
