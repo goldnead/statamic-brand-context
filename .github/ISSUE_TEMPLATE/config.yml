@@ -1,0 +1,10 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: Statamic core bug
+    url: https://github.com/statamic/cms/issues
+    about: If the problem also happens with this addon uninstalled, it belongs in Statamic itself.
+
+  - name: Security vulnerability
+    url: https://github.com/goldnead/statamic-brand-context/blob/main/SECURITY.md
+    about: Report privately by email — never in a public issue.

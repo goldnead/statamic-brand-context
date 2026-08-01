@@ -38,6 +38,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -80,6 +82,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -106,6 +110,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -120,15 +126,21 @@ jobs:
       - name: Pint
         run: vendor/bin/pint --test
 
-  assets:
-    name: built assets are current
+      # Level 5 with a committed baseline. The baseline is a ratchet: existing
+      # debt is listed in phpstan-baseline.neon, new code has to pass without it.
+      - name: PHPStan
+        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+  js:
+    name: Vue components
     runs-on: ubuntu-latest
 
-    # resources/dist is committed because consumers install with Composer and
-    # have no Node toolchain. Without this job a source change ships green while
-    # the bundle the Control Panel actually loads stays stale.
+    # BrandSwitcher is appended to every Control Panel page, so a mistake there
+    # is visible on every screen — and no PHP test can reach it.
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -143,7 +155,36 @@ jobs:
       # @statamic/cms resolves from vendor/, so Composer must run first.
       - run: composer update --prefer-dist --no-progress --no-interaction
 
-      - run: npm install --ignore-scripts
+      - run: npm ci --ignore-scripts
+
+      - run: npm test
+
+  assets:
+    name: built assets are current
+    runs-on: ubuntu-latest
+
+    # resources/dist is committed because consumers install with Composer and
+    # have no Node toolchain. Without this job a source change ships green while
+    # the bundle the Control Panel actually loads stays stale.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          tools: composer:v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # @statamic/cms resolves from vendor/, so Composer must run first.
+      - run: composer update --prefer-dist --no-progress --no-interaction
+
+      - run: npm ci --ignore-scripts
 
       - run: npm run build
 
