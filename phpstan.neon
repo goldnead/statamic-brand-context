@@ -1,0 +1,17 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - phpstan-baseline.neon
+
+parameters:
+    level: 5
+
+    paths:
+        - src
+        - database
+        - config
+        - routes
+
+    # Level 5 with a generated baseline is a ratchet for new code, not a licence
+    # to rewrite what already works. Anything in the baseline is a known debt;
+    # nothing new may be added to it without a reason in the commit message.
+    treatPhpDocTypesAsCertain: false

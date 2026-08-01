@@ -1,0 +1,44 @@
+# Generated with `vendor/bin/phpstan analyse --generate-baseline`.
+#
+# These eight are known debt, not a licence to add more:
+#   - config/brand-context.php env() calls: larastan resolves "the config directory"
+#     against the host app, not against a package that ships its own config file.
+#   - usersOf() return type: the docblock is narrower than what filter() can return.
+#   - trait.unused x2: HasBrand and RunsForEachBrand are public API for consumers,
+#     so nothing inside this package uses them.
+#   - BrandScope::getBrandColumn(): the scope is only ever attached to models using
+#     HasBrand; PHPStan sees the base Model.
+#
+# New code must pass without adding to this file.
+
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Called ''env'' outside of the config directory which returns null when the config is cached, use ''config''\.$#'
+			identifier: larastan.noEnvCallsOutsideOfConfig
+			count: 4
+			path: config/brand-context.php
+
+		-
+			message: '#^Method Goldnead\\BrandContext\\BrandMembership\:\:usersOf\(\) should return Illuminate\\Support\\Collection\<int, object\> but returns Illuminate\\Support\\Collection\<int, int\|object\|string\>\.$#'
+			identifier: return.type
+			count: 1
+			path: src/BrandMembership.php
+
+		-
+			message: '#^Trait Goldnead\\BrandContext\\Concerns\\HasBrand is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			count: 1
+			path: src/Concerns/HasBrand.php
+
+		-
+			message: '#^Trait Goldnead\\BrandContext\\Concerns\\RunsForEachBrand is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			count: 1
+			path: src/Concerns/RunsForEachBrand.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:getBrandColumn\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Scopes/BrandScope.php
