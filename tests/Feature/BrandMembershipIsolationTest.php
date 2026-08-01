@@ -131,6 +131,40 @@ it('refuses the screen to a user without the permission', function () {
     expect(BrandUser::query()->count())->toBe(0);
 });
 
+/**
+ * Hiding the button is not authorization. Every action on this controller
+ * checks the permission server-side, so every action gets the test that says
+ * so — otherwise the check regresses invisibly the next time one of them is
+ * touched.
+ */
+it('refuses a removal to a user without the permission', function () {
+    app()->instance(UserSource::class, new FakeUserSource([new FakeUser('u-1')]));
+
+    BrandMembers::attach('u-1', $this->a);
+    app('brand-context')->setCurrent($this->a);
+
+    $request = Request::create('/cp/brands/users', 'DELETE', ['user_id' => 'u-1']);
+    $request->setUserResolver(fn () => new FakeUser('nobody', 'nobody@example.com'));
+
+    expect(fn () => app(BrandUserController::class)->destroy($request))
+        ->toThrow(HttpException::class);
+
+    expect(BrandMembers::includes('u-1', $this->a))->toBeTrue()
+        ->and(BrandUser::query()->count())->toBe(1);
+});
+
+it('refuses to even list the users to someone without the permission', function () {
+    app()->instance(UserSource::class, new FakeUserSource([new FakeUser('u-1')]));
+
+    app('brand-context')->setCurrent($this->a);
+
+    $request = Request::create('/cp/brands/users', 'GET');
+    $request->setUserResolver(fn () => new FakeUser('nobody', 'nobody@example.com'));
+
+    expect(fn () => app(BrandUserController::class)->index($request, app(UserSource::class)))
+        ->toThrow(HttpException::class);
+});
+
 it('says why a rejected assignment was rejected instead of failing silently', function () {
     app()->instance(UserSource::class, new FakeUserSource([new FakeUser('u-1')]));
 
