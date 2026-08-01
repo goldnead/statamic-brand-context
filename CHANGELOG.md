@@ -1,7 +1,6 @@
 # Changelog
 
-## Unreleased
-
+## 1.7.0 — 2026-08-01
 ### Added
 
 - **PHPStan (Larastan) at level 5**, with `phpstan-baseline.neon` committed. The baseline holds the
