@@ -1,9 +1,12 @@
 # Everything a site installing this package does not need.
 # Without this, every consumer downloads the 65-test suite, the MySQL config,
-# the Vite sources and the CI definitions along with the package.
+# the Vite sources, the listing artwork and the CI definitions along with the
+# package.
 
 /.github            export-ignore
 /tests              export-ignore
+/art                export-ignore
+/screenshots        export-ignore
 /.gitattributes     export-ignore
 /.gitignore         export-ignore
 /phpunit.xml        export-ignore
