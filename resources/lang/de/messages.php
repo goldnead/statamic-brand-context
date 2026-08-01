@@ -6,6 +6,10 @@ return [
     'manage_brand_members' => 'Markenzugehörigkeit verwalten',
     'unknown_user' => 'Diesen Nutzer gibt es nicht mehr.',
 
+    // Marken-Umschalter (Control-Panel-Kopfzeile)
+    'switcher_aria_label' => 'Marke wechseln',
+    'switcher_label' => 'Marke',
+
     // Brand-Members-Screen
     'users_heading' => 'Nutzer',
     'scope_note' => 'Zuordnungen hier gelten für :brand, also die im Umschalter aktuell gewählte Marke.',

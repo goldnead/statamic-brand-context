@@ -1,16 +1,34 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { Dropdown, DropdownMenu, DropdownLabel, DropdownItem, Button } from '@statamic/cms/ui';
+import { config } from '@statamic/cms/api';
 
-// Data provided from PHP via Statamic::provideToScript(['brandContext' => ...]),
-// exposed to JS through Statamic.config(). Read it defensively across the
-// possible Statamic $config access shapes.
+/**
+ * SetBrandFromSession hands the brand list to the browser with
+ * Statamic::provideToScript(['brandContext' => ...]). Statamic renders that into
+ * `StatamicConfig` and boots the Config store with it before the CP app starts
+ * (statamic/cms resources/views/partials/scripts.blade.php), so by the time this
+ * component is set up `config.get()` is the one supported way to read it.
+ *
+ * There used to be four fallbacks here for shapes of `Statamic.$config` that do
+ * not exist in Statamic 6. They could not all be right, and the three wrong ones
+ * turned "the data never arrived" into "the switcher is quietly missing". One
+ * path, and it says so when it fails.
+ */
 function readConfig() {
-    const S = window.Statamic;
-    try { if (S?.$config?.get) { const c = S.$config.get('brandContext'); if (c) return c; } } catch (e) { /* */ }
-    try { if (typeof S?.$config === 'function') { const c = S.$config('brandContext'); if (c) return c; } } catch (e) { /* */ }
-    try { if (S?.$config?.brandContext) return S.$config.brandContext; } catch (e) { /* */ }
-    return window.__brandContext || { brands: [], current: null };
+    const cfg = config.get('brandContext');
+
+    if (! cfg) {
+        console.error(
+            '[brand-context] No `brandContext` in the Control Panel config. The brand switcher '
+            + 'needs SetBrandFromSession to run on this request — check that the middleware is in '
+            + 'the `statamic.cp` group and that multi-brand mode is enabled.'
+        );
+
+        return { brands: [], current: null };
+    }
+
+    return cfg;
 }
 
 const cfg = readConfig();
@@ -59,12 +77,12 @@ onMounted(() => {
                     :text="currentBrand?.name"
                     icon="building-generic"
                     icon-append="chevron-vertical"
-                    :aria-label="__('Switch brand')"
+                    :aria-label="__('brand-context::messages.switcher_aria_label')"
                 />
             </template>
 
             <DropdownMenu>
-                <DropdownLabel :text="__('Brand')" />
+                <DropdownLabel :text="__('brand-context::messages.switcher_label')" />
                 <DropdownItem
                     v-for="b in brands"
                     :key="b.id"

@@ -6,6 +6,10 @@ return [
     'manage_brand_members' => 'Manage brand members',
     'unknown_user' => 'This user no longer exists.',
 
+    // Brand switcher (Control Panel header)
+    'switcher_aria_label' => 'Switch brand',
+    'switcher_label' => 'Brand',
+
     // Brand Members screen
     'users_heading' => 'Users',
     'scope_note' => 'Assignments here apply to :brand — the brand currently selected in the switcher.',
