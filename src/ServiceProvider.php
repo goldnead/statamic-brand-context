@@ -3,9 +3,11 @@
 namespace Goldnead\BrandContext;
 
 use Goldnead\BrandContext\Contracts\BrandTokenResolver;
+use Goldnead\BrandContext\Contracts\SenderIdentityResolver;
 use Goldnead\BrandContext\Contracts\UserSource;
 use Goldnead\BrandContext\Http\Middleware\ResolveBrandFromToken;
 use Goldnead\BrandContext\Http\Middleware\SetBrandFromSession;
+use Goldnead\BrandContext\Sending\BrandSenderIdentity;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider as BaseServiceProvider;
@@ -30,6 +32,16 @@ class ServiceProvider extends BaseServiceProvider
         $this->app->alias('brand-context.members', BrandMembership::class);
 
         $this->app->bind(UserSource::class, StatamicUserSource::class);
+
+        // Who a brand's mail goes out as, and over which transport. Bound
+        // rather than singleton because it reads brand rows and config on
+        // every call, and an identity resolved once at boot would outlive the
+        // brand it described.
+        //
+        // Addons that send mail bind their own sub-interface to their own
+        // subclass, so a host can answer the question differently per addon.
+        // This binding is the answer for anything that asks the base contract.
+        $this->app->bind(SenderIdentityResolver::class, BrandSenderIdentity::class);
 
         // Registered on `resolving` as well as directly, because the translator
         // may already be resolved by the time an addon provider registers.

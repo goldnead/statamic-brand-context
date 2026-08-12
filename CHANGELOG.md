@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.8.0 — 2026-08-12
+### Added
+
+- **Sender identity per brand** — `Contracts\SenderIdentityResolver`, `Sending\SenderIdentity`,
+  `Sending\BrandSenderIdentity`, `Sending\BrandMailer` and `Sending\SaidRecently`. They answer
+  "who does brand N send as, and over which transport", read out of `brands.settings.mail`
+  (`from_address`, `from_name`, `mailer`, `locale`), and put the answer on the message rather than
+  into the config.
+
+  **They are not new code.** Until today they were four byte-identical copies in four namespaces —
+  `statamic-marketing`, `-notifications`, `-preference-center` and `-automations` each grew their own
+  on 12.08.2026, and by the evening they had already drifted: the marketing copy still accepted "a
+  brand transport with no from-address", the pair a relay verifying sending domains per account
+  refuses or silently rewrites. Which address a brand sends under is a property of the brand, so it
+  belongs here, and the strictest of the four readings is the one that moved.
+
+  What the rule says, in full:
+
+  - A brand with no `settings.mail` **changes nothing** — the configured transport, whatever From
+    the mailable settles on, the app locale. That is every single-brand install, and it is covered
+    by a test in every one of the four addons as well as here.
+  - A brand that declares `settings.mail` but no `from_address` **sends nothing**, loudly. So does
+    one naming a `mailer` that `config/mail.php` does not define — caught at resolution rather than
+    at the send, because a digest stamps `digested_at` before the mail leaves.
+  - Nothing is ever written to `mail.from.*`. Laravel burns that value into the cached mailer
+    instance on first resolution (`alwaysFrom`), so an override escapes its own `finally` and leaves
+    the first brand's address standing for the rest of the process.
+  - Refusal is a return value, never an exception: a fan-out has to carry on with the brands that
+    are fine.
+
+  `SenderIdentityResolver` is bound to `BrandSenderIdentity`. An addon that sends mail extends the
+  interface in its own namespace and binds its own default, so a host can answer the question
+  differently for marketing post than for transactional post; rebinding the contract here changes it
+  for everything that has not been rebound individually.
+
+  A package with a configured default transport of its own overrides
+  `BrandMailer::transport()` — the one hook, and it exists because
+  `marketing.sending.mailer` predates all of this and may not quietly stop working.
+
 ## 1.7.0 — 2026-08-01
 ### Added
 

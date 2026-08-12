@@ -192,6 +192,81 @@ stays closed, and the controller produces the response it always produced. And
 the brand is set explicitly on every request — never inherited from the last one,
 which matters the moment the app runs in a long-lived process.
 
+## Sender identity (who a brand's mail goes out as)
+
+A mail belongs to a brand, so the address it comes from and the transport it
+leaves through belong to the brand too. Both live in `brands.settings.mail`:
+
+```php
+$brand->update(['settings' => ['mail' => [
+    'from_address' => 'noreply@chorgesucht.de',
+    'from_name'    => 'chorgesucht.de',        // defaults to the brand name
+    'mailer'       => 'scaleway_chorgesucht',  // a mailer from config/mail.php
+    'locale'       => 'de',                    // the language its mail is written in
+]]]);
+```
+
+**Why the transport and not just the From.** A relay that verifies sending
+domains per account (Scaleway TEM, Postmark, SES) refuses — or silently replaces
+— a From it does not own. Sending brand A's mail through the account that only
+knows brand B is how a reader ends up with brand A's newsletter under brand B's
+name. The two values have to be chosen together, which is why they live in one
+place and are resolved in one place. The SMTP credentials stay in the
+environment and never reach the database, a backup or a CP export.
+
+Sending goes through `BrandMailer`, which puts the identity **on the message**
+and never into the config:
+
+```php
+app(BrandMailer::class)->send($brandId, $to, $toName, $mailable);
+app(BrandMailer::class)->sendRaw($brandId, $html, $text, fn ($message, $identity) => …);
+app(BrandMailer::class)->maySend($brandId);   // ask before you stamp anything
+```
+
+Four rules, and the reasons they are rules:
+
+- **A brand with no `settings.mail` changes nothing** — the configured
+  transport, whatever From the mailable settles on, the app locale. That is
+  every single-brand install. Under multi-brand it also writes one warning per
+  brand per five minutes, because there the host-wide From *is* somebody else's
+  identity; refusing instead would make an install fall silent on an upgrade,
+  which is the failure mode this whole thing is fighting.
+- **A brand that declares `settings.mail` but no `from_address` sends nothing**,
+  and says why. So does one naming a `mailer` that `config/mail.php` does not
+  define — caught when the identity is resolved rather than at the send, because
+  a digest stamps "delivered" on a week of items before the mail leaves.
+- **`mail.from.*` is never written.** Laravel reads it the first time a mailer
+  name is resolved and burns it into the cached instance (`alwaysFrom`), so an
+  override escapes its own `finally`: whichever brand sent first leaves its
+  address standing for every later message that sets no From of its own. That is
+  not fixable by being careful with config.
+- **A refusal is a return value, not an exception.** A run across several brands
+  has to skip one and carry on.
+
+A mailable that travels this way must not overwrite a From that is already
+there:
+
+```php
+if (empty($this->from)) {
+    $this->from(config('mail.from.address'), config('mail.from.name'));
+}
+```
+
+A host that keeps sender identities somewhere else rebinds one contract:
+
+```php
+$this->app->bind(
+    \Goldnead\BrandContext\Contracts\SenderIdentityResolver::class,
+    MyOwnResolver::class,   // resolve(?int $brandId): SenderIdentity
+);
+```
+
+Addons that send mail (`statamic-marketing`, `-notifications`,
+`-preference-center`, `-automations`) extend that interface in their own
+namespace and bind their own default, so a host can answer the question for
+marketing post alone without touching transactional post. Rebinding the contract
+above changes it for everything that has not been rebound individually.
+
 ## Testing
 
 ```bash
