@@ -21,8 +21,10 @@
   - A brand with no `settings.mail` **changes nothing** — the configured transport, whatever From
     the mailable settles on, the app locale. That is every single-brand install, and it is covered
     by a test in every one of the four addons as well as here.
-  - A brand that declares `settings.mail` but no `from_address` **sends nothing**, loudly. So does
-    one naming a `mailer` that `config/mail.php` does not define — caught at resolution rather than
+  - A brand that fills in `from_name` or `mailer` but no `from_address` **sends nothing**, loudly.
+    (Those three keys are what counts as declaring a sender; a `locale` or a host's own key under
+    `settings.mail` does not.) So does a brand naming a `mailer` that `config/mail.php` does not
+    define — caught at resolution rather than
     at the send, because a digest stamps `digested_at` before the mail leaves.
   - Nothing is ever written to `mail.from.*`. Laravel burns that value into the cached mailer
     instance on first resolution (`alwaysFrom`), so an override escapes its own `finally` and leaves

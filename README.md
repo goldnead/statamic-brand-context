@@ -231,8 +231,11 @@ Four rules, and the reasons they are rules:
   brand per five minutes, because there the host-wide From *is* somebody else's
   identity; refusing instead would make an install fall silent on an upgrade,
   which is the failure mode this whole thing is fighting.
-- **A brand that declares `settings.mail` but no `from_address` sends nothing**,
-  and says why. So does one naming a `mailer` that `config/mail.php` does not
+- **A brand that fills in `from_name` or `mailer` but no `from_address` sends
+  nothing**, and says why. Those three keys are what counts as declaring a
+  sender; other keys under `settings.mail` (a host's own base URL, a `locale`)
+  do not, so a brand that keeps something else there is not refused for a
+  missing address. So does one naming a `mailer` that `config/mail.php` does not
   define — caught when the identity is resolved rather than at the send, because
   a digest stamps "delivered" on a week of items before the mail leaves.
 - **`mail.from.*` is never written.** Laravel reads it the first time a mailer

@@ -183,6 +183,24 @@ it('refuses a brand that declares a mailer but no from-address', function (): vo
         ->once();
 });
 
+it('does not treat an unrelated key under settings.mail as a declared sender', function (): void {
+    // Hosts keep other things under `mail` — the hub keeps `site_url`, the root
+    // of the links in its mail templates. A brand with only such a key has said
+    // nothing about who it sends as, and refusing it for a missing
+    // `from_address` would stop mail that has nothing to do with identity.
+    $nurBasis = Brand::create([
+        'handle' => 'nur-basis',
+        'name' => 'Nur Basis',
+        'settings' => ['mail' => ['site_url' => 'https://nur-basis.test']],
+    ]);
+
+    expect(app(BrandMailer::class)->send($nurBasis->id, 'dora@example.com', null, ($this->mailable)()))->toBeTrue();
+
+    expect(($this->mails)('global'))->toHaveCount(1)
+        ->and(($this->mails)('global')[0]->getOriginalMessage()->getFrom()[0]->getAddress())
+        ->toBe('paket@example.com');
+});
+
 it('refuses a mailer name that config/mail.php does not define', function (): void {
     $tippfehler = Brand::create([
         'handle' => 'tippfehler',

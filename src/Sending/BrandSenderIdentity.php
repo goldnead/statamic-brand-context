@@ -52,6 +52,23 @@ use Throwable;
  */
 class BrandSenderIdentity implements SenderIdentityResolver
 {
+    /**
+     * Die Schlüssel, mit denen eine Brand sagt „ich habe eine Absenderidentität".
+     *
+     * Not "settings.mail is non-empty", and the difference is not academic:
+     * hosts keep other things under `mail` — a base URL for the links in a
+     * template, for instance. A brand that has only such a key has said nothing
+     * about who it sends as, and refusing it for a missing `from_address` would
+     * stop mail that has nothing to do with sender identity.
+     *
+     * `locale` is deliberately not in this list either. It says which language
+     * a brand writes in, not which name it writes under, and on its own it is
+     * not a declaration that needs an address to be complete.
+     *
+     * @var list<string>
+     */
+    private const DECLARES_A_SENDER = ['from_address', 'from_name', 'mailer'];
+
     public function resolve(?int $brandId): SenderIdentity
     {
         $brand = $this->brand($brandId);
@@ -63,7 +80,7 @@ class BrandSenderIdentity implements SenderIdentityResolver
         $mail = data_get($brand->settings, 'mail');
         $mail = is_array($mail) ? array_filter($mail, fn ($v) => $v !== null && $v !== '') : [];
 
-        if ($mail === []) {
+        if (array_intersect_key($mail, array_flip(self::DECLARES_A_SENDER)) === []) {
             // The brand exists but says nothing about mail. Nothing changes —
             // including the locale, which stays whatever the app decided.
             //
