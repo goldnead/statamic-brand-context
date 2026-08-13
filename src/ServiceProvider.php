@@ -88,7 +88,12 @@ class ServiceProvider extends BaseServiceProvider
      */
     protected function registerQueue(): void
     {
-        (new BrandOnQueue($this->app['brand-context']))->register($this->app['events']);
+        // Als Singleton: der prozessweite Payload-Haken löst diese Klasse zur
+        // Laufzeit aus dem aktuellen Container auf, und der Stapel, auf dem die
+        // vorherige Marke liegt, muss derselbe sein wie der, den die
+        // Job-Ereignisse füllen.
+        $this->app->singleton(BrandOnQueue::class);
+        $this->app->make(BrandOnQueue::class)->register($this->app['events']);
     }
 
     /**

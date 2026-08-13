@@ -63,27 +63,46 @@ class BrandOnQueue
      */
     protected array $previous = [];
 
-    public function __construct(protected BrandManager $brands) {}
+    /**
+     * The manager of the CURRENT container, never one captured at boot.
+     *
+     * Nothing here holds a reference to a container: an object that outlives a
+     * boot — and the static payload hook does — would otherwise answer for an
+     * application that no longer exists.
+     */
+    protected function brands(): BrandManager
+    {
+        return app('brand-context');
+    }
 
     /**
-     * Wire the payload writer and the four events that bracket a job.
+     * Wire the payload writer and the events that bracket a job.
      *
-     * Only under multi-brand. In single-brand mode there is exactly one brand,
-     * the scope is a no-op, and a payload key describing it would be noise in
-     * every queued job of every install that never turned multi-brand on.
+     * The multi-brand check is deliberately NOT made here. It is made in each
+     * callback, at call time: a host that switches the flag — or a test that
+     * does — would otherwise keep whatever the first boot decided, in one
+     * direction silently doing nothing and in the other stamping a payload key
+     * on a single-brand install for ever.
      */
     public function register(Dispatcher $events): void
     {
-        if (! $this->brands->multiBrandEnabled()) {
-            return;
-        }
-
         // On the base class, not through the `Queue` facade. The facade points
         // at the QueueManager, which forwards an unknown method to the DEFAULT
         // connection — so a call that only registers a callback would open a
         // Redis or database connection at boot, in every process, including
         // those that never queue anything.
-        BaseQueue::createPayloadUsing(fn (): array => $this->payload());
+        //
+        // `Queue::createPayloadUsing()` collects into a static array, so a
+        // process that boots the application twice — Octane, and every test
+        // that builds a fresh one — registers this twice. That is harmless
+        // HERE and only here: the callback closes over nothing, asks the
+        // current container for the manager, and therefore answers the same
+        // whichever boot registered it. A version that captured the manager at
+        // registration would have to be registered exactly once, and could not
+        // be: Laravel empties that array between tests, so a one-shot guard
+        // would leave every test after the first with no hook at all —
+        // measured, on this suite, before this comment was written.
+        BaseQueue::createPayloadUsing(fn (): array => app(static::class)->payload());
 
         $events->listen(JobProcessing::class, fn (JobProcessing $event) => $this->enter($event));
 
@@ -103,36 +122,44 @@ class BrandOnQueue
         // of job number 12.
         $events->listen(Looping::class, function (): void {
             $this->previous = [];
-            $this->brands->forget();
+            $this->brands()->forget();
         });
     }
 
     /** @return array<string, int> */
-    protected function payload(): array
+    public function payload(): array
     {
-        if (! $this->brands->hasCurrent()) {
+        $brands = $this->brands();
+
+        if (! $brands->multiBrandEnabled() || ! $brands->hasCurrent()) {
             return [];
         }
 
-        return [self::PAYLOAD_KEY => $this->brands->currentId()];
+        return [self::PAYLOAD_KEY => $brands->currentId()];
     }
 
     protected function enter(JobProcessing $event): void
     {
-        $this->previous[] = $this->brands->hasCurrent() ? $this->brands->current() : null;
+        $brands = $this->brands();
+
+        if (! $brands->multiBrandEnabled()) {
+            return;
+        }
+
+        $this->previous[] = $brands->hasCurrent() ? $brands->current() : null;
 
         $brandId = $event->job->payload()[self::PAYLOAD_KEY] ?? null;
 
         if (! is_int($brandId)) {
-            $this->brands->forget();
+            $brands->forget();
 
             return;
         }
 
         try {
-            $this->brands->setCurrent($brandId);
+            $brands->setCurrent($brandId);
         } catch (Throwable $e) {
-            $this->brands->forget();
+            $brands->forget();
 
             Log::warning(
                 "brand-context: queued job [{$event->job->resolveName()}] carries brand [{$brandId}], "
@@ -148,6 +175,6 @@ class BrandOnQueue
             return;
         }
 
-        $this->brands->setCurrent(array_pop($this->previous));
+        $this->brands()->setCurrent(array_pop($this->previous));
     }
 }

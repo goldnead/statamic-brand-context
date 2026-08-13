@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.9.1 — 2026-08-13
+### Fixed
+
+- **The payload hook no longer captures the container it was born in.** `Queue::createPayloadUsing()`
+  collects into a static array, so a process that boots the application more than once — Octane, and
+  every test that builds a fresh one — ends up with several callbacks. The 1.9.0 callback closed over
+  the `BrandManager` it was constructed with, so an older one could answer for an application that no
+  longer exists and put its brand on a job the current one had deliberately left alone. The callback
+  now asks the current container at call time and closes over nothing, which makes the duplicates
+  harmless instead of dangerous.
+
+  A one-shot registration guard was tried first and is the wrong answer, written down here so it is
+  not tried again: Laravel empties that array between tests, so the guard left every test after the
+  first with no hook at all. The last test in `tests/Queue/BrandOnQueueTest.php` is the one that
+  catches it, because it runs against the fifth application of the process.
+
+
 ## 1.9.0 — 2026-08-13
 ### Added
 

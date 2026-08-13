@@ -115,6 +115,12 @@ it('runs with no brand when the brand was deleted between push and run', functio
  * On `sync` the job runs inside the request that dispatched it. Forgetting the
  * brand when it ends would take it away from the rest of that request — the
  * reason this keeps a stack instead of calling forget().
+ *
+ * It also stands in for something no single test can state directly: this is
+ * the LAST test in the file, so it runs against the fifth application built in
+ * this process. Laravel empties the payload callbacks between tests, so a
+ * version of the hook that registered itself only once would leave this test
+ * with no brand at all — and it did, before that guard was removed.
  */
 it('leaves the dispatching process its own brand', function () {
     config()->set('queue.default', 'sync');
@@ -122,7 +128,8 @@ it('leaves the dispatching process its own brand', function () {
     BrandContext::setCurrent($this->brandA);
     RecordsWhatTheJobSaw::dispatch();
 
-    expect(RecordsWhatTheJobSaw::$brandId)->toBe($this->brandA->id)
+    expect(RecordsWhatTheJobSaw::$ran)->toBeTrue()
+        ->and(RecordsWhatTheJobSaw::$brandId)->toBe($this->brandA->id)
         ->and(BrandContext::hasCurrent())->toBeTrue()
         ->and(BrandContext::currentId())->toBe($this->brandA->id);
 });
