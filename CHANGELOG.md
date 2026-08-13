@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.9.0 — 2026-08-13
+### Added
+
+- **The brand travels with the job** — `Queue\BrandOnQueue`, wired by the service
+  provider under multi-brand. The brand current at dispatch is written into the queue payload
+  and set again while the job runs.
+
+  This is a defect fix wearing a feature's clothes. A queue worker has no request behind it, so
+  no brand was ever current, and fail-closed made that "no rows" rather than "all rows": a
+  queued job ran to completion having seen nothing at all. Successfully. Measured on a live
+  install on 13.08.2026 — `statamic-marketing`'s campaign fan-out could not see the campaign it
+  had been handed the handle of, so the campaign sat in `sending` for ever, with no exception, no
+  `failed_jobs` row and no log line. Every queued job in every sibling addon had the same hole.
+
+  What the rule says:
+
+  - A job pushed with **no** current brand carries no key and runs exactly as before. `currentId()`
+    is deliberately not used to build the payload — it answers with the default brand when nothing
+    is set, and a job widening from "no brand" to "the default brand" is the one outcome worse than
+    doing nothing.
+  - The previous brand is **restored**, not forgotten. On `sync` a job runs inside the request that
+    dispatched it, and a `forget()` at the end would take the brand away from the rest of that
+    request. Hence a stack, and hence `JobProcessed` + `JobExceptionOccurred` as the two mutually
+    exclusive ends of a job — listening to `JobFailed` as well would pop it twice.
+  - A brand deleted between push and run leaves the job with no brand and one warning.
+  - Single-brand installs are untouched: the hook is not registered at all.
+
+  `BrandContext::runFor()` inside a job still wins, and is still right wherever the job knows
+  better than its dispatcher — a command looping over every brand, for instance.
+
+
 ## 1.8.0 — 2026-08-12
 ### Added
 

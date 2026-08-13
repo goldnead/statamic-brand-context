@@ -21,6 +21,14 @@
             identical on SQLite, and this package's two tables are where the
             rest of the family reads its brand from.
         -->
+        <!--
+            Queued jobs. Its own suite because multi-brand has to be on before
+            the provider boots, which is a property of the test case rather than
+            of a single test.
+        -->
+        <testsuite name="Queue">
+            <directory>tests/Queue</directory>
+        </testsuite>
         <testsuite name="Migrations">
             <directory>tests/Migrations</directory>
         </testsuite>

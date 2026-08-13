@@ -192,6 +192,39 @@ stays closed, and the controller produces the response it always produced. And
 the brand is set explicitly on every request — never inherited from the last one,
 which matters the moment the app runs in a long-lived process.
 
+## Queued jobs
+
+A worker has no request behind it, so nothing resolves a brand — and under
+multi-brand that is not "unscoped", it is fail-closed. Every branded query in the
+job returns zero rows, the job finishes successfully, and nothing anywhere says
+so: no exception, no `failed_jobs` row, no log line.
+
+Since 1.9.0 the brand that was current when the job was **pushed** is written
+into the queue payload and set again while the job **runs**. Nothing has to be
+done for it; there is no trait and no base class.
+
+```php
+BrandContext::runFor($brand, fn () => SendCampaignJob::dispatch($handle));
+// …the worker picks it up, and $brand is current inside handle().
+```
+
+Three properties are worth knowing:
+
+- **A job pushed with no current brand carries no key** and runs exactly as
+  before, fail-closed. The default brand is never substituted: a job silently
+  widening from "no brand" to "the default brand" would be worse than one that
+  does nothing.
+- **The previous brand is restored, not forgotten.** On the `sync` connection a
+  job runs inside the request that dispatched it, and clearing the brand
+  afterwards would take it away from the rest of that request.
+- **A brand deleted between push and run** leaves the job with no brand and one
+  warning in the log. Fail-closed is the same answer the rest of the package
+  gives when it cannot tell whose data it is looking at.
+
+An explicit `BrandContext::runFor()` inside a job still wins, and still makes
+sense wherever the job knows better than its dispatcher did — a digest command
+looping over every brand, for instance.
+
 ## Sender identity (who a brand's mail goes out as)
 
 A mail belongs to a brand, so the address it comes from and the transport it

@@ -7,6 +7,7 @@ use Goldnead\BrandContext\Contracts\SenderIdentityResolver;
 use Goldnead\BrandContext\Contracts\UserSource;
 use Goldnead\BrandContext\Http\Middleware\ResolveBrandFromToken;
 use Goldnead\BrandContext\Http\Middleware\SetBrandFromSession;
+use Goldnead\BrandContext\Queue\BrandOnQueue;
 use Goldnead\BrandContext\Sending\BrandSenderIdentity;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
@@ -73,7 +74,21 @@ class ServiceProvider extends BaseServiceProvider
         ], 'brand-context-migrations');
 
         $this->registerMiddleware();
+        $this->registerQueue();
         $this->registerControlPanel();
+    }
+
+    /**
+     * Carry the current brand into queued jobs.
+     *
+     * Outside a request nothing resolves a brand, and fail-closed turns that
+     * into "no rows" rather than "all rows" — a queued job then runs to
+     * completion having seen nothing. {@see BrandOnQueue} explains what
+     * that cost on a live install.
+     */
+    protected function registerQueue(): void
+    {
+        (new BrandOnQueue($this->app['brand-context']))->register($this->app['events']);
     }
 
     /**
