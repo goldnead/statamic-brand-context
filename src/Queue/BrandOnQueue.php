@@ -94,14 +94,18 @@ class BrandOnQueue
         //
         // `Queue::createPayloadUsing()` collects into a static array, so a
         // process that boots the application twice — Octane, and every test
-        // that builds a fresh one — registers this twice. That is harmless
-        // HERE and only here: the callback closes over nothing, asks the
-        // current container for the manager, and therefore answers the same
-        // whichever boot registered it. A version that captured the manager at
-        // registration would have to be registered exactly once, and could not
-        // be: Laravel empties that array between tests, so a one-shot guard
-        // would leave every test after the first with no hook at all —
-        // measured, on this suite, before this comment was written.
+        // that builds a fresh one — registers this twice, and every payload
+        // built afterwards calls all of them. That is harmless HERE and only
+        // here: the callback closes over nothing, asks the current container
+        // for the manager, and therefore answers the same whichever boot
+        // registered it. The cost is a few identical calls per push, and it is
+        // bounded by the number of boots, which outside a test suite is one.
+        //
+        // A version that captured the manager at registration would have to be
+        // registered exactly once, and could not be: Laravel empties that array
+        // between tests, so a one-shot guard left every test after the first
+        // with no hook at all — measured, on this suite, before this comment
+        // was written.
         BaseQueue::createPayloadUsing(fn (): array => app(static::class)->payload());
 
         $events->listen(JobProcessing::class, fn (JobProcessing $event) => $this->enter($event));
@@ -121,8 +125,14 @@ class BrandOnQueue
         // worker that has run for days from serving job number 40,000 the brand
         // of job number 12.
         $events->listen(Looping::class, function (): void {
+            $brands = $this->brands();
+
+            if (! $brands->multiBrandEnabled()) {
+                return;
+            }
+
             $this->previous = [];
-            $this->brands()->forget();
+            $brands->forget();
         });
     }
 

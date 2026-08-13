@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.9.2 — 2026-08-13
+### Fixed
+
+- **The `Looping` callback said one thing and did another.** 1.9.1 moved the multi-brand check
+  into the callbacks and wrote that down; this one had kept it. Nothing observable followed from
+  it — `forget()` in single-brand mode changes nothing `current()` answers — but a comment that
+  claims more than the code holds is worse than no comment. The cost of registering the payload
+  hook on every boot is now named in the same place.
+
+
 ## 1.9.1 — 2026-08-13
 ### Fixed
 
