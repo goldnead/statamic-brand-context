@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.10.0 — 2026-08-25
+## 1.11.0 — 2026-08-25
 
 ### Fixed
 
@@ -21,9 +21,12 @@
   1. `brand-context.sites` — one Statamic site per brand, the tidiest arrangement.
   2. `brand-context.hosts` — several domains on one site. The port is ignored and a leading `www.`
      resolves to the same brand, so a visitor typing it cannot land on another company's content.
-  3. `?brand=` — **off by default** (`allow_query_override`). On a scoped public page that is a way
+  3. `brand-context.paths` — several brands on one domain, told apart by the first path segment.
+     This is what an agency reaches for before it buys the second domain. Only the first segment is
+     read: a brand owns a prefix, not a scattering of URLs.
+  4. `?brand=` — **off by default** (`allow_query_override`). On a scoped public page that is a way
      to read another brand's data by guessing a handle.
-  4. the default brand — **and it says so in the log, once per request.** A misconfigured site now
+  5. the default brand — **and it says so in the log, once per request.** A misconfigured site now
      hears about it instead of quietly serving the wrong brand. If even the default names no brand,
      nothing is served and that is an `error`: showing one brand's data to another's visitors is
      worse than showing none.
@@ -34,7 +37,7 @@
 
 ### Added
 
-- Config keys `sites`, `hosts` and `allow_query_override`.
+- Config keys `sites`, `hosts`, `paths` and `allow_query_override`.
 - Alias `brand.site`, for wiring it onto individual routes.
 
 ## 1.9.2 — 2026-08-13

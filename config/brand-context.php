@@ -95,6 +95,18 @@ return [
     'hosts' => [],
 
     /*
+    | Several brands on one domain, told apart by the first path segment. This
+    | is what an agency reaches for before it buys the second domain:
+    |
+    |   'paths' => ['chorwerkstatt' => 'chorwerkstatt', 'halbmond' => 'halbmond'],
+    |
+    | Only the first segment is read. A brand owns a prefix, not a scattering of
+    | URLs.
+    */
+
+    'paths' => [],
+
+    /*
     | `?brand=<handle>` on a public URL. Off by default: on a scoped site it is
     | a way to read another brand's data by guessing a handle. Useful for a
     | demo or a preview, and a deliberate choice either way.

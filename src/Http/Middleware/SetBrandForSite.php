@@ -40,7 +40,10 @@ class SetBrandForSite
             return $next($request);
         }
 
-        $handle = $this->fromSite() ?? $this->fromHost($request) ?? $this->fromQuery($request);
+        $handle = $this->fromSite()
+            ?? $this->fromHost($request)
+            ?? $this->fromPath($request)
+            ?? $this->fromQuery($request);
 
         if ($handle !== null && $this->apply($manager, $handle, $request)) {
             return $next($request);
@@ -100,6 +103,27 @@ class SetBrandForSite
         return $hosts[$host]
             ?? $hosts[preg_replace('/^www\./', '', $host)]
             ?? null;
+    }
+
+    /**
+     * Several brands on one domain, told apart by the first path segment.
+     *
+     * `paths` maps that segment to a brand handle. Only the first segment is
+     * looked at: a brand owns a prefix, not a scattering of URLs, and matching
+     * deeper would make `/chorwerkstatt/kurse/vinyl` ambiguous the moment two
+     * brands share a word.
+     */
+    protected function fromPath(Request $request): ?string
+    {
+        $paths = config('brand-context.paths', []);
+
+        if ($paths === []) {
+            return null;
+        }
+
+        $erstes = explode('/', trim($request->path(), '/'))[0] ?? '';
+
+        return $erstes === '' ? null : ($paths[$erstes] ?? null);
     }
 
     protected function fromQuery(Request $request): ?string

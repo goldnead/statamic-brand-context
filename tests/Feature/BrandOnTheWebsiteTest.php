@@ -28,12 +28,15 @@ beforeEach(function () {
 
     config()->set('brand-context.default_handle', 'nord');
 
-    Route::middleware(SetBrandForSite::class)->get('/seite', function () {
+    $antwort = function () {
         return response()->json([
             'marke' => app('brand-context')->current()?->handle,
             'sichtbar' => Widget::pluck('email')->all(),
         ]);
-    });
+    };
+
+    Route::middleware(SetBrandForSite::class)->get('/seite', $antwort);
+    Route::middleware(SetBrandForSite::class)->get('/{marke}/seite', $antwort);
 });
 
 it('serves a brand its own rows when the host names it', function () {
@@ -112,4 +115,33 @@ it('hides everything rather than guessing when even the default is missing', fun
     Log::shouldHaveReceived('error')
         ->withArgs(fn (string $meldung) => str_contains($meldung, 'no brand could be resolved'))
         ->once();
+});
+
+it('tells brands apart by the first path segment', function () {
+    // An agency running several clients on one domain — the arrangement people
+    // reach for before they buy the second domain.
+    config()->set('brand-context.paths', ['nord' => 'nord', 'sued' => 'sued']);
+
+    $this->get('http://agentur.example/sued/seite')
+        ->assertOk()
+        ->assertJson(['marke' => 'sued', 'sichtbar' => ['s@example.com']]);
+
+    $this->get('http://agentur.example/nord/seite')
+        ->assertJson(['marke' => 'nord', 'sichtbar' => ['n@example.com']]);
+});
+
+it('lets the host win over the path', function () {
+    // A brand with its own domain has said the more specific thing.
+    config()->set('brand-context.hosts', ['nord.example' => 'nord']);
+    config()->set('brand-context.paths', ['sued' => 'sued']);
+
+    $this->get('http://nord.example/sued/seite')->assertJson(['marke' => 'nord']);
+});
+
+it('reads only the first segment', function () {
+    // Matching deeper would make /sued/kurse/nord ambiguous the moment two
+    // brands share a word.
+    config()->set('brand-context.paths', ['nord' => 'nord', 'sued' => 'sued']);
+
+    $this->get('http://agentur.example/sued/seite')->assertJson(['marke' => 'sued']);
 });
