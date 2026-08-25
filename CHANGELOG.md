@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.10.0 — 2026-08-25
+
+### Fixed
+
+- **A multi-brand installation served an empty website, silently.** The brand was only ever
+  resolved for Control Panel requests: `SetBrandFromSession` was wired into the `statamic.cp`
+  group and nowhere else. A visitor has no session to read a brand from, so nothing set one — and
+  the scope fails closed by design. Every public page rendered, every scoped query returned
+  nothing, and not one error, exception or log line was written. Nothing looked broken; the site
+  simply had no content.
+
+  That shape is why it survived: "no content" and "correctly no content" are indistinguishable
+  from the outside. It took inventorying an installation with 17 rows in the table and an empty
+  calendar feed to see it.
+
+  New middleware `SetBrandForSite`, wired into the website group ahead of `SubstituteBindings` for
+  the same reason the CP one is. It answers "which brand is this request?" in order:
+
+  1. `brand-context.sites` — one Statamic site per brand, the tidiest arrangement.
+  2. `brand-context.hosts` — several domains on one site. The port is ignored and a leading `www.`
+     resolves to the same brand, so a visitor typing it cannot land on another company's content.
+  3. `?brand=` — **off by default** (`allow_query_override`). On a scoped public page that is a way
+     to read another brand's data by guessing a handle.
+  4. the default brand — **and it says so in the log, once per request.** A misconfigured site now
+     hears about it instead of quietly serving the wrong brand. If even the default names no brand,
+     nothing is served and that is an `error`: showing one brand's data to another's visitors is
+     worse than showing none.
+
+  Single-brand installations are untouched, and the middleware never throws — asking Statamic which
+  site is answering can fail for reasons unrelated to brands, and the thing deciding which rows a
+  visitor sees must not be the thing that takes the page down.
+
+### Added
+
+- Config keys `sites`, `hosts` and `allow_query_override`.
+- Alias `brand.site`, for wiring it onto individual routes.
+
 ## 1.9.2 — 2026-08-13
 ### Fixed
 

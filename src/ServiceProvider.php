@@ -6,6 +6,7 @@ use Goldnead\BrandContext\Contracts\BrandTokenResolver;
 use Goldnead\BrandContext\Contracts\SenderIdentityResolver;
 use Goldnead\BrandContext\Contracts\UserSource;
 use Goldnead\BrandContext\Http\Middleware\ResolveBrandFromToken;
+use Goldnead\BrandContext\Http\Middleware\SetBrandForSite;
 use Goldnead\BrandContext\Http\Middleware\SetBrandFromSession;
 use Goldnead\BrandContext\Queue\BrandOnQueue;
 use Goldnead\BrandContext\Sending\BrandSenderIdentity;
@@ -97,15 +98,15 @@ class ServiceProvider extends BaseServiceProvider
     }
 
     /**
-     * Places SetBrandFromSession directly before SubstituteBindings in a group,
+     * Places a brand resolver directly before SubstituteBindings in a group,
      * falling back to appending when that middleware is not present.
      */
-    protected function insertBeforeBindings(string $group): void
+    protected function insertBeforeBindings(string $group, string $middleware = SetBrandFromSession::class): void
     {
         $router = $this->app['router'];
         $stack = $router->getMiddlewareGroups()[$group] ?? [];
 
-        if (in_array(SetBrandFromSession::class, $stack, true)) {
+        if (in_array($middleware, $stack, true)) {
             return;
         }
 
@@ -118,9 +119,10 @@ class ServiceProvider extends BaseServiceProvider
             // that look like an addon bug rather than a middleware-ordering one.
             $message = sprintf(
                 'brand-context: SubstituteBindings was not found in the [%s] middleware group, so '
-                .'SetBrandFromSession had to be appended. Route-model binding now runs before the '
-                .'brand is resolved, which makes bound Control Panel routes 404 in multi-brand mode.',
-                $group
+                .'%s had to be appended. Route-model binding now runs before the brand is resolved, '
+                .'which makes bound routes 404 in multi-brand mode.',
+                $group,
+                class_basename($middleware)
             );
 
             if ($this->app->environment('local', 'testing')) {
@@ -129,12 +131,12 @@ class ServiceProvider extends BaseServiceProvider
 
             report(new \RuntimeException($message));
 
-            $router->pushMiddlewareToGroup($group, SetBrandFromSession::class);
+            $router->pushMiddlewareToGroup($group, $middleware);
 
             return;
         }
 
-        array_splice($stack, $at, 0, [SetBrandFromSession::class]);
+        array_splice($stack, $at, 0, [$middleware]);
         $router->middlewareGroup($group, $stack);
     }
 
@@ -144,6 +146,7 @@ class ServiceProvider extends BaseServiceProvider
 
         $router->aliasMiddleware('brand.token', ResolveBrandFromToken::class);
         $router->aliasMiddleware('brand.session', SetBrandFromSession::class);
+        $router->aliasMiddleware('brand.site', SetBrandForSite::class);
     }
 
     /**
@@ -173,6 +176,17 @@ class ServiceProvider extends BaseServiceProvider
         // always appends, which put us behind it, so the group is rebuilt.
         $this->app->booted(function () {
             $this->insertBeforeBindings('statamic.cp');
+
+            // And the website. Without this a multi-brand installation serves
+            // empty pages: a visitor has no session, so nothing sets a brand,
+            // and the fail-closed scope hides every row — silently, on every
+            // page. Which brand a request belongs to is answered by
+            // `brand-context.sites` or `.hosts`; see the config file.
+            foreach (['statamic.web', 'web'] as $gruppe) {
+                if (isset($this->app['router']->getMiddlewareGroups()[$gruppe])) {
+                    $this->insertBeforeBindings($gruppe, SetBrandForSite::class);
+                }
+            }
         });
 
         // Load the CP brand-switcher bundle (a global Vue component that floats a

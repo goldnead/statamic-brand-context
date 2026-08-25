@@ -68,4 +68,38 @@ return [
 
     'fail_mode' => env('BRAND_CONTEXT_FAIL_MODE', 'closed'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Which brand a website request belongs to
+    |--------------------------------------------------------------------------
+    |
+    | The Control Panel reads the active brand from the session. A visitor has
+    | no session to read, so a multi-brand website has to say which brand a
+    | request belongs to — otherwise the fail-closed scope hides everything and
+    | the site serves empty pages without a single error.
+    |
+    | Map either the Statamic site or the host. One site per brand is the
+    | tidiest arrangement and gives each brand its own URLs; `hosts` is for
+    | several domains on one site.
+    |
+    |   'sites' => ['nordlicht' => 'nordlicht', 'halbmond' => 'halbmond'],
+    |   'hosts' => ['halbmond.de' => 'halbmond', 'chorwerkstatt.de' => 'chorwerkstatt'],
+    |
+    | A request that matches nothing falls back to the default brand and says so
+    | in the log, once per request.
+    |
+    */
+
+    'sites' => [],
+
+    'hosts' => [],
+
+    /*
+    | `?brand=<handle>` on a public URL. Off by default: on a scoped site it is
+    | a way to read another brand's data by guessing a handle. Useful for a
+    | demo or a preview, and a deliberate choice either way.
+    */
+
+    'allow_query_override' => env('BRAND_CONTEXT_ALLOW_QUERY_OVERRIDE', false),
+
 ];
