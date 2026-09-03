@@ -71,6 +71,24 @@ export const DropdownItem = {
     },
 };
 
+// Alert carries both a heading and a body, and this package uses both: the
+// scope note and the transition rule are two separate statements.
+export const Alert = {
+    name: 'Alert',
+    props: {
+        text: { type: [String, Number], default: null },
+        heading: { type: String, default: null },
+        variant: { type: String, default: 'default' },
+    },
+    setup(props, { slots, attrs }) {
+        return () => h('div', { 'data-stub': 'Alert', 'data-variant': props.variant, ...attrs }, [
+            props.heading,
+            props.heading && props.text ? ' ' : null,
+            props.text,
+            slots.default?.(),
+        ]);
+    },
+};
 export const Header = textual('header', 'Header');
 export const Panel = container('section', 'Panel');
 export const Card = container('div', 'Card');

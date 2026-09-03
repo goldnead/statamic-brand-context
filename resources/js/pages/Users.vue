@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { Head, router } from '@statamic/cms/inertia';
-import { Header, Panel, Card, Badge, Button, ConfirmationModal, EmptyStateMenu } from '@statamic/cms/ui';
+import { Header, Panel, Card, Alert, Badge, Button, ConfirmationModal, EmptyStateMenu } from '@statamic/cms/ui';
 
 const props = defineProps([
     'brand',        // { id, name, handle } — the brand in the switcher, the only one this screen writes to
@@ -97,18 +97,27 @@ function confirmRemoval() {
             Putting it only in the CHANGELOG would mean an operator sees names
             in a list they never assigned and concludes the filter is broken.
         -->
-        <Panel class="mb-4" data-brand-context-transition-note>
-            <div class="p-4 text-sm text-gray-600 dark:text-gray-300">
-                <p>{{ t('scope_note', { brand: brand.name }) }}</p>
-                <p class="mt-2">{{ t('transition_note') }}</p>
-            </div>
-        </Panel>
+        <!-- A note and an error banner are both `Alert`s. They used to be text
+             dropped straight onto a bare Panel, which the CP does nowhere. -->
+        <!-- Two statements, two slots: the scope note says which brand this
+             list is about, the transition rule says why names appear that
+             nobody assigned. Glued into one paragraph they read as one
+             thought, and the surprising half loses its own line. -->
+        <Alert
+            class="mb-4"
+            :heading="t('scope_note', { brand: brand.name })"
+            :text="t('transition_note')"
+            data-brand-context-transition-note
+        />
 
-        <Panel v-if="generalErrors.length" class="mb-4" data-brand-context-form-errors>
-            <div class="p-4 text-sm text-red-600 dark:text-red-400">
-                <p v-for="(message, index) in generalErrors" :key="index">{{ message }}</p>
-            </div>
-        </Panel>
+        <Alert
+            v-for="(message, index) in generalErrors"
+            :key="index"
+            variant="error"
+            :text="message"
+            class="mb-4"
+            data-brand-context-form-errors
+        />
 
         <EmptyStateMenu
             v-if="! users.length"
@@ -157,10 +166,14 @@ function confirmRemoval() {
                             </div>
                         </div>
 
+                        <!-- Not `danger`: core keeps that for the confirm button
+                             inside the modal this opens, and a column of red
+                             buttons shouts louder than the action deserves.
+                             The confirmation below is the red one. -->
                         <Button
                             v-if="canManage"
                             :text="user.assigned ? t('action_remove') : t('action_assign')"
-                            :variant="user.assigned ? 'danger' : 'default'"
+                            variant="default"
                             size="sm"
                             :disabled="busy === user.id"
                             @click="toggle(user)"
