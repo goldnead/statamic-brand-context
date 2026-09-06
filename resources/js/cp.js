@@ -10,7 +10,6 @@
 import { config } from '@statamic/cms/api';
 
 import BrandSwitcher from './BrandSwitcher.vue';
-import Users from './pages/Users.vue';
 import Settings from './pages/Settings.vue';
 
 Statamic.booting(() => {
@@ -32,10 +31,6 @@ Statamic.booting(() => {
             console.error('[brand-context] brand switcher failed to mount:', e);
         }
     }
-
-    // The membership screen. The identifier must match the Inertia::render()
-    // call in BrandUserController exactly.
-    Statamic.$inertia.register('brand-context::Users', Users);
 
     // The suite's settings screen. Registered in both modes, like the route
     // and the nav item — a single-brand install has settings too.

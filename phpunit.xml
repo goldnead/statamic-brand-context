@@ -29,6 +29,16 @@
         <testsuite name="Queue">
             <directory>tests/Queue</directory>
         </testsuite>
+        <!--
+            The brand field on Statamic's own user form. Its own suite because
+            it is the only one that boots the real CMS, and because it runs
+            twice — once per users repository. A user is a yaml file on one
+            driver and a database row on the other, and the field has to leave
+            no trace in either.
+        -->
+        <testsuite name="Users">
+            <directory>tests/Users</directory>
+        </testsuite>
         <testsuite name="Migrations">
             <directory>tests/Migrations</directory>
         </testsuite>

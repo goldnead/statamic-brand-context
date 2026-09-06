@@ -1,5 +1,48 @@
 # Changelog
 
+## Unveröffentlicht
+
+### Geändert: die Markenzugehörigkeit ist ein Feld am Nutzer, die eigene Seite entfällt
+
+Adrian beim Durchgang durch die Demo: *„Ich verstehe nichtmal, was da überhaupt definiert
+wird."* Zu Recht. Der Bildschirm unter **Benutzer:innen → Markenzugehörigkeit** bezog sich
+immer auf die Marke im Umschalter, zeigte deshalb je Nutzer genau einen Knopf und sah damit
+aus wie ein Rechteschalter. Er war weder das eine noch das andere: die Zuordnung entscheidet,
+**in welchen Marken jemand als Zuständige:r angeboten wird**, und `brand_user` war von
+Anfang an eine echte n:m-Tabelle. Beides ist an einem Mehrfachauswahlfeld am Nutzer ablesbar
+und war an einer Seite, die immer nur eine Marke benennen konnte, nicht ablesbar.
+
+- **Neu: das Feld „Marken"** im Statamic-Nutzer-Formular. Beschriftet nach Wirkung: *„In
+  welchen Marken taucht diese Person als Zuständige:r auf? Leer = in allen."* Der zweite Satz
+  ist die Übergangsregel, die vorher nur auf der entfernten Seite stand.
+- **Der Wert wird nicht am Nutzer gespeichert.** Ein Statamic-Nutzer ist nicht zwangsläufig
+  eine Datenbankzeile — beim File-Treiber ist er `users/<id>.yaml` — und genau deshalb hat
+  `brand_user` keinen Fremdschlüssel. Das Feld hängt an drei Punkten: `UserBlueprintFound`
+  setzt es ins Formular, ein `User::computed()`-Rückruf liest es aus `brand_user`,
+  `UserSaving` nimmt den abgeschickten Wert wieder vom Nutzer herunter und `UserSaved`
+  schreibt ihn als Zeilen. Beide Treiber sind im Test: beim File-Treiber wäre ein Leck eine
+  Zeile in der YAML, beim Eloquent-Treiber eine Spalte, die es nicht gibt.
+- **Nur ab der zweiten Marke.** Bei genau einer Marke sagen „der einzigen Marke zugeordnet"
+  und „nirgends zugeordnet" dasselbe aus; ein Feld mit einer Option wäre Lärm auf jedem
+  Nutzer-Formular.
+- **Entfernt:** die Seite (`resources/js/pages/Users.vue`), ihre Routen (`routes/cp.php`),
+  der `BrandUserController`, der Nav-Punkt und die Berechtigung `manage brand members`. Das
+  Nutzer-Formular ist bereits durch Statamics `edit users` gesichert; eine zweite
+  Berechtigung auf derselben Maske hätte nur unklar gemacht, welche gilt.
+- **Unverändert:** `brand_user`, `BrandMembership`, die `BrandMembers`-Fassade und die
+  Übergangsregel („Nutzer ohne jede Zuordnung gilt als Mitglied jeder Marke"). Nur die
+  Oberfläche ist umgezogen; `statamic-leadhub` sieht in seinen Zuständigen-Auswahlen nach
+  einer Zuordnung über das Feld exakt dieselbe Liste wie vorher über die Seite.
+
+### Behoben: die Nutzer-Ablage wurde eine Boot-Phase zu früh gebaut
+
+`User::computed()` löst die Users-Repository auf, und beim File-Treiber ist die ein Singleton
+um `Stache::store('users')`. In `boot()` aufgerufen — also bevor Statamic diesen Store
+angemeldet hat — behielt sie für den ganzen Prozess einen `null`-Store, und jedes
+`User::all()` danach starb im Query-Builder. Die Registrierung liegt jetzt in `booted()`. Die
+Testfälle listen den eigenen Provider bewusst **vor** dem von Statamic, weil der Defekt in
+der umgekehrten Reihenfolge unsichtbar ist.
+
 ## 1.12.0 — 2026-09-06
 
 ### Neu: eine gemeinsame Einstellungs-Schicht für die Addon-Suite

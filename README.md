@@ -17,8 +17,8 @@ The database schema is identical in both modes (`brand_id` everywhere, backfille
 | Statamic | 6.0 or newer |
 | Database | Any Laravel-supported driver. The migrations are verified against MySQL 8 in CI; SQLite has no InnoDB key-length limit and is not a substitute for that run. |
 
-The Control-Panel surface (brand switcher, Brand Members screen) needs Statamic. The rest of the
-package boots in a plain Laravel application without it.
+The Control-Panel surface (brand switcher, addon settings screen, the brand field on the user
+form) needs Statamic. The rest of the package boots in a plain Laravel application without it.
 
 ## Installation
 
@@ -128,9 +128,14 @@ $assignees = BrandMembers::usersOf()
 ```
 
 Write access is `attach()` / `detach()`, both idempotent and both taking the same
-brand argument. The Control Panel screen for it lives under **Users → Brand
-Members** and always acts on the brand in the switcher; it appears only in
-multi-brand mode.
+brand argument.
+
+In the Control Panel it is a **Brands** field on Statamic's own user form — a
+multi-select of every brand, shown only when multi-brand is on and there is more
+than one brand to choose from. The value is never stored on the user: a Statamic
+user may be a yaml file rather than a database row, so the field is read from
+and written back to `brand_user` around the save. There is nothing to publish,
+configure or grant for it.
 
 ### The rule that will surprise you
 

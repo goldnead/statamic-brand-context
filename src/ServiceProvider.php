@@ -13,10 +13,14 @@ use Goldnead\BrandContext\Sending\BrandSenderIdentity;
 use Goldnead\BrandContext\Settings\SettingsManager;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider as BaseServiceProvider;
+use Statamic\Contracts\Auth\UserRepository as UserRepositoryContract;
+use Statamic\Events\UserBlueprintFound;
+use Statamic\Events\UserSaved;
+use Statamic\Events\UserSaving;
 use Statamic\Facades\CP\Nav;
-use Statamic\Facades\Permission;
 use Statamic\Facades\User;
 use Statamic\Statamic;
 
@@ -37,6 +41,11 @@ class ServiceProvider extends BaseServiceProvider
         $this->app->alias('brand-context.members', BrandMembership::class);
 
         $this->app->bind(UserSource::class, StatamicUserSource::class);
+
+        // The brand field on Statamic's user form. A singleton because it
+        // carries the value it lifted off a user in `UserSaving` across to
+        // `UserSaved`; two instances would drop it on the floor.
+        $this->app->singleton(UserBrandField::class);
 
         // The settings layer. Both singletons: the registry is the process's
         // list of which addons announced a screen, and the manager holds the
@@ -267,6 +276,13 @@ class ServiceProvider extends BaseServiceProvider
 
         $this->registerSettingsScreen();
 
+        // Registered in both modes, unlike everything below the guard: the
+        // field decides for itself whether it has anything to say (see
+        // UserBrandField::applies()), and deciding that once at boot would
+        // mean an install that turns multi-brand on, or adds its second brand,
+        // keeps a user form without the field until the next deploy.
+        $this->registerUserBrandField();
+
         $this->publishes([
             __DIR__.'/../resources/dist/build' => public_path('vendor/statamic-brand-context/build'),
         ], 'brand-context-cp');
@@ -303,8 +319,6 @@ class ServiceProvider extends BaseServiceProvider
                 }
             }
         });
-
-        $this->registerMembershipScreen();
     }
 
     /**
@@ -368,37 +382,56 @@ class ServiceProvider extends BaseServiceProvider
     }
 
     /**
-     * The screen that assigns Control Panel users to the current brand.
+     * Brand affiliation on Statamic's own user form.
      *
-     * Only reachable under multi-brand — the whole call site is inside the
-     * multi-brand guard of registerControlPanel(). A single-brand install has
-     * one brand, so a membership screen there would offer a choice that does
-     * not exist, and every user is a member of it anyway.
-     *
-     * Routes go through Statamic::pushCpRoutes() rather than a route file on an
-     * AddonServiceProvider: this package is a plain Laravel provider on purpose
-     * (it has to boot in a Statamic-less context), and pushCpRoutes is the same
-     * mechanism AddonServiceProvider::registerCpRoutes() uses underneath.
+     * Replaces the screen this package used to register under its own nav item
+     * — see {@see UserBrandField} for why that screen could not be understood
+     * and what the three hooks below do. There is no route, no page component
+     * and no permission of our own any more: editing a user is already gated
+     * by core's `edit users`, and a second permission on the same form would
+     * only make it ambiguous which one is being granted.
      */
-    protected function registerMembershipScreen(): void
+    protected function registerUserBrandField(): void
     {
-        Statamic::pushCpRoutes(function () {
-            Route::group([], __DIR__.'/../routes/cp.php');
+        // `class_exists(Statamic::class)` is true whenever the CMS is merely
+        // installed — it is a dependency of this package. That is not the same
+        // as the CMS being *booted*: in a plain Laravel host, and in this
+        // package's own Statamic-less suite, nothing binds the users
+        // repository, and `User::computed()` would fatal from inside boot().
+        if (! $this->app->bound(UserRepositoryContract::class)) {
+            return;
+        }
+
+        $field = $this->app->make(UserBrandField::class);
+
+        // The listeners return null, deliberately. UserSaving::dispatch halts
+        // on the first non-null response, and a listener that answered would
+        // cancel everyone else's save.
+        Event::listen(UserBlueprintFound::class, function ($event) use ($field) {
+            $field->addTo($event->blueprint);
         });
 
-        Permission::extend(function () {
-            Permission::group('brand-context', __('brand-context::messages.permission_group'), function () {
-                Permission::register('manage brand members')
-                    ->label(__('brand-context::messages.manage_brand_members'));
-            });
+        Event::listen(UserSaving::class, function ($event) use ($field) {
+            $field->takeFrom($event->user);
         });
 
-        Nav::extend(function ($nav) {
-            $nav->create(__('brand-context::messages.nav_brand_members'))
-                ->section('Users')
-                ->route('brand-context.users.index')
-                ->icon('users')
-                ->can('manage brand members');
+        Event::listen(UserSaved::class, function ($event) use ($field) {
+            $field->sync($event->user);
+        });
+
+        // The read side. `ExtractsFromUserFields` merges computedData() over
+        // the user's own data, which is how a field with nothing in storage
+        // still arrives at the form with a value.
+        //
+        // Deferred to `booted`, and that is not cosmetic. `User::computed()`
+        // resolves the users repository, and the file driver's repository is a
+        // singleton built around `Stache::store('users')`. Called from this
+        // provider's boot() it is built before Statamic has registered that
+        // store, so it keeps a null store for the rest of the process and
+        // every `User::all()` afterwards dies in the query builder — in the
+        // Control Panel, in the console, everywhere.
+        $this->app->booted(function () use ($field) {
+            User::computed(UserBrandField::HANDLE, fn ($user) => $field->currentValue($user));
         });
     }
 }

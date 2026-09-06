@@ -26,8 +26,7 @@ use Statamic\Facades\Addon;
  * **The screen always works on the current brand**, the one in the brand
  * switcher. The brand is never read from the request. An operator of brand A
  * cannot write brand B's settings by editing the payload, because the payload
- * has no say in it — the same argument, and the same guarantee, as
- * {@see BrandUserController}.
+ * has no say in it.
  *
  * **Sections the operator may not manage are not rendered.** Statamic core
  * hides what you cannot reach rather than showing it greyed out, and a
