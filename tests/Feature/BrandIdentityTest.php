@@ -192,6 +192,37 @@ class BrandIdentityTest extends TestCase
     }
 
     #[Test]
+    public function a_configured_wordmark_beats_the_brand_row_name(): void
+    {
+        // Der Fehler, den dieser Test festhaelt, war im Bild sofort zu sehen:
+        // die Bestellbestaetigung des Suite-Ladens trug „Default" statt
+        // „adriangoldner.dev". Die Marke in der Datenbank heisst so, und der
+        // ABGELEITETE Name hatte die ausdrueckliche Config geschlagen.
+        //
+        // Die Regel: was jemand hingeschrieben hat, gewinnt gegen das, was wir
+        // uns hergeleitet haben.
+        config(['brand-context.identity' => ['name' => 'adriangoldner.dev']]);
+
+        $identitaet = BrandIdentity::for($this->marke([], 'default'));
+
+        $this->assertSame('adriangoldner.dev', $identitaet->name());
+    }
+
+    #[Test]
+    public function an_explicit_name_on_the_brand_still_beats_the_config(): void
+    {
+        // Die Gegenrichtung, damit die Korrektur oben nicht zu weit greift:
+        // `settings.identity.name` ist ebenfalls hingeschrieben, also gewinnt
+        // sie. Nur der abgeleitete `brands.name` rutscht ans Ende.
+        config(['brand-context.identity' => ['name' => 'aus der config']]);
+
+        $this->assertSame(
+            'an der marke',
+            BrandIdentity::for($this->marke(['name' => 'an der marke'], 'drei'))->name(),
+        );
+    }
+
+    #[Test]
     public function unknown_keys_are_ignored(): void
     {
         // Was nicht zur Erscheinung gehoert, faellt raus. Sonst waere das

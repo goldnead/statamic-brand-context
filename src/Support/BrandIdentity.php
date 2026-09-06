@@ -92,12 +92,6 @@ class BrandIdentity
             $settings = $brand->settings;
             $kandidat = is_array($settings) ? ($settings['identity'] ?? null) : null;
             $ausDerMarke = is_array($kandidat) ? $kandidat : [];
-
-            // Der Markenname ist der offensichtliche Vorgabewert fuer die
-            // Wortmarke. Wer eine eigene will, traegt sie ein.
-            if (! isset($ausDerMarke['name']) && is_string($brand->name) && trim($brand->name) !== '') {
-                $ausDerMarke['name'] = $brand->name;
-            }
         }
 
         $ausDerConfig = config('brand-context.identity');
@@ -118,6 +112,27 @@ class BrandIdentity
                     $werte[$schluessel] = trim($wert);
                 }
             }
+        }
+
+        // Der Markenname als LETZTER Ausweg fuer die Wortmarke — nach der
+        // Config, nicht davor.
+        //
+        // Das stand zuerst andersherum, und der Fehler war im Bild sofort zu
+        // sehen: die Bestellbestaetigung des Ladens trug „Default" statt
+        // „adriangoldner.dev". Die Marke in der Datenbank heisst so, und ein
+        // ABGELEITETER Wert hatte damit eine ausdrueckliche Einstellung
+        // geschlagen.
+        //
+        // Die Regel dahinter: was jemand hingeschrieben hat, gewinnt gegen das,
+        // was wir uns hergeleitet haben — egal aus welcher Schicht die
+        // Herleitung kommt. Eine ausdrueckliche `settings.identity.name` an der
+        // Marke schlaegt die Config weiterhin, denn die ist hingeschrieben.
+        if ($werte['name'] === self::DEFAULTS['name']
+            && ! isset($ausDerConfig['name'])
+            && $brand instanceof Brand
+            && is_string($brand->name)
+            && trim($brand->name) !== '') {
+            $werte['name'] = trim($brand->name);
         }
 
         return new self($werte);
