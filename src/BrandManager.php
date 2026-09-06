@@ -5,6 +5,7 @@ namespace Goldnead\BrandContext;
 use Closure;
 use Goldnead\BrandContext\Exceptions\AmbiguousBrandRecord;
 use Goldnead\BrandContext\Models\Brand;
+use Goldnead\BrandContext\Settings\SettingsManager;
 use Illuminate\Database\Eloquent\Model;
 use RuntimeException;
 
@@ -23,6 +24,21 @@ class BrandManager
 
     /** When true, the global scope is bypassed entirely (explicit admin ops). */
     protected bool $scopeDisabled = false;
+
+    /**
+     * Listeners notified after the current brand changes.
+     *
+     * Deliberately a plain callback list rather than a Laravel event: the one
+     * listener that exists ({@see SettingsManager})
+     * has to run *synchronously and before the next `config()` read*, and an
+     * event on the dispatcher can be queued, faked in a test, or intercepted
+     * by a listener that throws. None of those are acceptable for something
+     * whose failure means one tenant's configuration serving another's
+     * request.
+     *
+     * @var array<int, Closure>
+     */
+    protected array $brandChangeListeners = [];
 
     /**
      * Is hard brand isolation active?
@@ -106,23 +122,58 @@ class BrandManager
         return $this->current !== null;
     }
 
+    /**
+     * Register a listener for brand changes.
+     *
+     * Anything holding state derived from the current brand has to be told
+     * when it stops being current. Today that is the settings layer, whose
+     * overrides sit on the live config and would otherwise still be the
+     * previous brand's.
+     */
+    public function onBrandChanged(Closure $listener): static
+    {
+        $this->brandChangeListeners[] = $listener;
+
+        return $this;
+    }
+
+    /**
+     * Tell the listeners, but only when the brand actually moved.
+     *
+     * Comparing ids rather than objects: two queries for the same brand return
+     * two model instances, and re-applying settings on every no-op set would
+     * turn a per-request call into a per-call one.
+     */
+    protected function brandChanged(?Brand $previous): void
+    {
+        if ($previous?->id === $this->current?->id) {
+            return;
+        }
+
+        foreach ($this->brandChangeListeners as $listener) {
+            $listener($this->current);
+        }
+    }
+
     /** Set the active brand. Accepts a Brand, id, or handle. */
     public function setCurrent(Brand|int|string|null $brand): static
     {
-        if ($brand === null) {
-            $this->current = null;
+        $previous = $this->current;
 
-            return $this;
-        }
+        $this->current = $brand === null ? null : $this->resolveBrand($brand);
 
-        $this->current = $this->resolveBrand($brand);
+        $this->brandChanged($previous);
 
         return $this;
     }
 
     public function forget(): static
     {
+        $previous = $this->current;
+
         $this->current = null;
+
+        $this->brandChanged($previous);
 
         return $this;
     }
@@ -159,7 +210,12 @@ class BrandManager
 
             return $callback();
         } finally {
-            $this->current = $previous;
+            // Through setCurrent(), not by assigning $this->current directly:
+            // the listeners have to hear the way back as well. Restoring the
+            // field by hand would leave the settings layer holding the
+            // callback's brand for everything that runs after this call —
+            // which is the whole rest of a `RunsForEachBrand` command.
+            $this->setCurrent($previous);
         }
     }
 

@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.12.0 — 2026-09-06
+
+### Neu: eine gemeinsame Einstellungs-Schicht für die Addon-Suite
+
+Ein Addon erfüllt `Contracts\ProvidesSettings` — vier statische Methoden: Namensraum,
+Config-Wurzel, Berechtigung, Feldliste — und meldet sich im `boot()` bei
+`Settings\SettingsRegistry` an. Alles Weitere stellt dieses Paket: den Bildschirm unter
+*Einstellungen → Addon-Einstellungen*, die Validierung, die Speicherung und die
+Markendimension.
+
+Vorher hatten `automations`, `leadhub` und `webhook-manager` dieselbe Mechanik dreimal
+unabhängig gebaut, zusammen rund 3.260 Zeilen — und **keine der drei Tabellen hatte eine
+`brand_id`**, zwei Marken teilten sich auf einer Mehrmarken-Installation also eine
+Einstellung.
+
+- **`brand_settings`** (`brand_id`, `namespace`, `key`, `value`), ein Schlüssel je Zeile.
+  Nicht der JSON-Blob `brands.settings`: bei sechzehn Schreibern überschreiben zwei
+  gleichzeitige Speichervorgänge einander vollständig, und der Verlierer merkt es nicht.
+  `brands.settings.mail` bleibt unangetastet.
+- **Nur Überschreibungen.** Gespeichert wird ausschließlich, was jemand geändert hat; ein
+  Wert zurück auf den Paket-Default löscht die Zeile. Ein Paket-Update verschiebt die
+  Vorgaben also weiterhin.
+- **Feldtypen** `string`, `integer`, `boolean`, `list` (mit `items` für den Elementtyp) und
+  `select` (mit `options`, in beiden gebräuchlichen Schreibweisen).
+- **`Facades\BrandSettings`** als ausdrücklicher Leser. Bestehender Code muss nichts ändern:
+  die Überschreibungen liegen auf der Live-Config, `config('addon.x')` antwortet weiter
+  richtig.
+- **`BrandManager::onBrandChanged()`** — ein Haken, über den etwas erfahren kann, dass die
+  aktuelle Marke gewechselt hat. Die Schicht hängt daran, um die Config mitzuziehen.
+- Der CP-Bildschirm und das JS-Bundle laden jetzt auch im Einmarken-Betrieb. Der
+  Marken-Umschalter bleibt dem Mehrmarken-Betrieb vorbehalten (`brandContextMultiBrand`).
+  Das Bundle wird nur registriert, wenn sein Manifest veröffentlicht ist — sonst hätte ein
+  Update ohne `vendor:publish` jede CP-Seite mit 500 beantwortet.
+
+**Voraussetzung für die Addons:** `automations`, `leadhub` und `webhook-manager` in ihren
+kommenden Fassungen verlangen `^1.12`. Diese Version muss vor ihnen veröffentlicht werden.
+
 ## 1.11.1 — 2026-09-03
 
 ### Behoben: Hinweis und Fehler als `Alert`, ruhiger Zeilenknopf

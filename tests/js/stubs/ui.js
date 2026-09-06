@@ -96,8 +96,100 @@ export const Badge = textual('span', 'Badge');
 export const EmptyStateMenu = {
     name: 'EmptyStateMenu',
     props: ['heading', 'description'],
+    // The slot is rendered, unlike the first version of this stub, which
+    // dropped it. A stub that swallows a slot cannot fail when the component
+    // under test puts something in one — and an empty state whose only content
+    // is in that slot would have passed while rendering an empty box.
+    setup(props, { attrs, slots }) {
+        return () => h('div', { 'data-stub': 'EmptyStateMenu', ...attrs }, [
+            props.heading,
+            props.description,
+            slots.default?.(),
+        ]);
+    },
+};
+
+export const EmptyStateItem = {
+    name: 'EmptyStateItem',
+    props: ['heading', 'description', 'icon', 'href', 'target'],
     setup(props, { attrs }) {
-        return () => h('div', { 'data-stub': 'EmptyStateMenu', ...attrs }, [props.heading, props.description]);
+        return () => h('a', { 'data-stub': 'EmptyStateItem', href: props.href, ...attrs }, [
+            props.heading,
+            props.description,
+        ]);
+    },
+};
+
+export const Icon = {
+    name: 'Icon',
+    props: ['name'],
+    setup(props, { attrs }) {
+        return () => h('i', { 'data-stub': 'Icon', 'data-icon': props.name, ...attrs });
+    },
+};
+
+export const Field = {
+    name: 'Field',
+    props: ['label', 'instructions'],
+    setup(props, { attrs, slots }) {
+        return () => h('div', { 'data-stub': 'Field', ...attrs }, [
+            props.label,
+            props.instructions,
+            slots.default?.(),
+        ]);
+    },
+};
+
+/**
+ * The three form controls, as `v-model`-shaped as the real ones: they render
+ * the value they were given and emit `update:modelValue` on input. A stub that
+ * only rendered would let a component pass while never writing anything back.
+ */
+function control(tag, name, type = null) {
+    return {
+        name,
+        props: ['modelValue', 'type', 'rows', 'placeholder', 'inputAttrs', 'disabled'],
+        emits: ['update:modelValue'],
+        setup(props, { attrs, emit }) {
+            return () => h(tag, {
+                'data-stub': name,
+                type: type ?? props.type ?? 'text',
+                value: props.modelValue,
+                ...attrs,
+                onInput: (e) => emit('update:modelValue', e.target.value),
+            });
+        },
+    };
+}
+
+export const Input = control('input', 'Input');
+export const Textarea = control('textarea', 'Textarea');
+
+export const Select = {
+    name: 'Select',
+    props: ['modelValue', 'options', 'placeholder', 'adaptiveWidth', 'disabled'],
+    emits: ['update:modelValue'],
+    setup(props, { attrs, emit }) {
+        return () => h('select', {
+            'data-stub': 'Select',
+            value: props.modelValue,
+            ...attrs,
+            onChange: (e) => emit('update:modelValue', e.target.value),
+        }, (props.options ?? []).map((o) => h('option', { value: o.value }, o.label)));
+    },
+};
+
+export const Switch = {
+    name: 'Switch',
+    props: ['modelValue', 'disabled'],
+    emits: ['update:modelValue'],
+    setup(props, { attrs, emit }) {
+        return () => h('button', {
+            'data-stub': 'Switch',
+            'data-checked': props.modelValue ? 'true' : 'false',
+            ...attrs,
+            onClick: () => emit('update:modelValue', ! props.modelValue),
+        });
     },
 };
 

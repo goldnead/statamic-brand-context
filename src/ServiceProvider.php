@@ -10,11 +10,14 @@ use Goldnead\BrandContext\Http\Middleware\SetBrandForSite;
 use Goldnead\BrandContext\Http\Middleware\SetBrandFromSession;
 use Goldnead\BrandContext\Queue\BrandOnQueue;
 use Goldnead\BrandContext\Sending\BrandSenderIdentity;
+use Goldnead\BrandContext\Settings\SettingsManager;
+use Goldnead\BrandContext\Settings\SettingsRegistry;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider as BaseServiceProvider;
 use Statamic\Facades\CP\Nav;
 use Statamic\Facades\Permission;
+use Statamic\Facades\User;
 use Statamic\Statamic;
 
 class ServiceProvider extends BaseServiceProvider
@@ -34,6 +37,20 @@ class ServiceProvider extends BaseServiceProvider
         $this->app->alias('brand-context.members', BrandMembership::class);
 
         $this->app->bind(UserSource::class, StatamicUserSource::class);
+
+        // The settings layer. Both singletons: the registry is the process's
+        // list of which addons announced a screen, and the manager holds the
+        // packaged-config baseline, which must be captured once before any
+        // override is applied and never recaptured.
+        $this->app->singleton(SettingsRegistry::class);
+
+        $this->app->singleton('brand-context.settings', fn ($app) => new SettingsManager(
+            $app->make(SettingsRegistry::class),
+            $app->make(BrandManager::class),
+            $app->make('config'),
+        ));
+
+        $this->app->alias('brand-context.settings', SettingsManager::class);
 
         // Who a brand's mail goes out as, and over which transport. Bound
         // rather than singleton because it reads brand rows and config on
@@ -77,6 +94,52 @@ class ServiceProvider extends BaseServiceProvider
         $this->registerMiddleware();
         $this->registerQueue();
         $this->registerControlPanel();
+        $this->registerSettings();
+    }
+
+    /**
+     * Put the stored overrides onto the live config, and keep them in step
+     * with the brand switcher.
+     *
+     * Deferred to `booted` so every addon provider has had its own `boot()` to
+     * register with {@see SettingsRegistry}: applying earlier would push the
+     * overrides of whichever packages happened to boot first and silently skip
+     * the rest.
+     */
+    protected function registerSettings(): void
+    {
+        $this->app->booted(function () {
+            // `config:cache` boots the app fully and then dumps the resolved
+            // config to `bootstrap/cache/config.php`. Applying during that
+            // build would bake the overrides into the cached file, and a baked
+            // override outlives the row it came from: deleting a setting would
+            // have no effect at all until somebody ran `config:clear`.
+            //
+            // It would also poison the baseline. On the next boot
+            // `mergeConfigFrom` is skipped because the config is cached, so
+            // the baseline snapshot would record an override as the packaged
+            // default — and a value reset to the file's default would then be
+            // stored as a row instead of deleted.
+            //
+            // Skipping is safe: the cached config keeps the file values, and
+            // every process that reads it applies the overrides on its own
+            // boot.
+            if (method_exists($this->app, 'runningConsoleCommand')
+                && $this->app->runningConsoleCommand('config:cache')) {
+                return;
+            }
+
+            $settings = $this->app->make(SettingsManager::class);
+
+            $settings->apply();
+
+            // The live config belongs to whichever brand was applied last, so
+            // a switch has to be pushed through before anything reads config()
+            // again — in the Control Panel, in a queue worker taking the next
+            // brand's job, and inside RunsForEachBrand.
+            $this->app->make(BrandManager::class)
+                ->onBrandChanged(fn () => $settings->brandChanged());
+        });
     }
 
     /**
@@ -160,7 +223,59 @@ class ServiceProvider extends BaseServiceProvider
             return;
         }
 
-        if (! app('brand-context')->multiBrandEnabled()) {
+        $multiBrand = app('brand-context')->multiBrandEnabled();
+
+        // The Control Panel bundle, the settings screen and the assets are
+        // registered in **both** modes. The settings screen is the reason: a
+        // single-brand install is the common case and the one an agency buys
+        // the suite for, and a settings screen that only appears once you turn
+        // on multi-brand would be a settings screen almost nobody sees.
+        //
+        // Only the brand switcher and the request-scoped brand resolution are
+        // multi-brand concerns, and they stay behind the flag below.
+        // Registered only when the published bundle is actually there.
+        // `partials/scripts.blade.php` calls `Vite::withEntryPoints()` for
+        // every registered vite with no guard of its own, and a missing
+        // manifest throws from inside the Control Panel layout — which is a
+        // 500 on *every* CP page, not just this addon's.
+        //
+        // That risk used to be confined to multi-brand installs, because the
+        // bundle was only registered there. Since the settings screen made it
+        // load everywhere, an existing single-brand site that upgrades without
+        // running `vendor:publish --tag=brand-context-cp` would have lost its
+        // whole Control Panel. A settings screen that renders nothing is a bad
+        // day; a Control Panel that will not open is a worse one.
+        $hot = __DIR__.'/../resources/dist/hot';
+
+        if (file_exists($hot) || is_file(public_path('vendor/statamic-brand-context/build/manifest.json'))) {
+            Statamic::vite('statamic-brand-context', [
+                'buildDirectory' => 'vendor/statamic-brand-context/build',
+                'input' => ['resources/js/cp.js'],
+                // The package's own path, not public_path(): `npm run dev` writes the hot file next to
+                // the bundle it builds (vite.config.js sets the same path). Pointing at public_path()
+                // meant the CP looked somewhere Vite never writes, so HMR silently did nothing.
+                'hotFile' => $hot,
+            ]);
+        }
+
+        // Whether the switcher should mount at all. Without this the bundle
+        // would append it on every single-brand install, where it has no
+        // brands to offer and its own config key is never provided — the
+        // component would log the "middleware is missing" error on a site
+        // where nothing is missing.
+        Statamic::provideToScript(['brandContextMultiBrand' => $multiBrand]);
+
+        $this->registerSettingsScreen();
+
+        $this->publishes([
+            __DIR__.'/../resources/dist/build' => public_path('vendor/statamic-brand-context/build'),
+        ], 'brand-context-cp');
+
+        $this->publishes([
+            __DIR__.'/../resources/lang' => $this->app->langPath('vendor/brand-context'),
+        ], 'brand-context-translations');
+
+        if (! $multiBrand) {
             return;
         }
 
@@ -189,28 +304,67 @@ class ServiceProvider extends BaseServiceProvider
             }
         });
 
-        // Load the CP brand-switcher bundle (a global Vue component that floats a
-        // brand selector into the top-right of the CP header — the supported way,
-        // since Statamic exposes no addon slot for the native user menu/topbar).
-        // Built into resources/dist/build, published to public/vendor/….
-        Statamic::vite('statamic-brand-context', [
-            'buildDirectory' => 'vendor/statamic-brand-context/build',
-            'input' => ['resources/js/cp.js'],
-            // The package's own path, not public_path(): `npm run dev` writes the hot file next to
-            // the bundle it builds (vite.config.js sets the same path). Pointing at public_path()
-            // meant the CP looked somewhere Vite never writes, so HMR silently did nothing.
-            'hotFile' => __DIR__.'/../resources/dist/hot',
-        ]);
-
         $this->registerMembershipScreen();
+    }
 
-        $this->publishes([
-            __DIR__.'/../resources/dist/build' => public_path('vendor/statamic-brand-context/build'),
-        ], 'brand-context-cp');
+    /**
+     * The suite's settings screen: one page, one section per registered addon.
+     *
+     * Registered in both single- and multi-brand mode, unlike the membership
+     * screen below. A single-brand install still has settings; what it does
+     * not have is more than one brand to keep them apart for.
+     *
+     * The permissions themselves are **not** registered here. Each addon
+     * already ships its own (`manage automation settings` and friends), and
+     * registering them again from this package would produce a duplicate entry
+     * in the permission tree and make it ambiguous which one a user group is
+     * actually granting.
+     */
+    protected function registerSettingsScreen(): void
+    {
+        Statamic::pushCpRoutes(function () {
+            Route::group([], __DIR__.'/../routes/cp-settings.php');
+        });
 
-        $this->publishes([
-            __DIR__.'/../resources/lang' => $this->app->langPath('vendor/brand-context'),
-        ], 'brand-context-translations');
+        Nav::extend(function ($nav) {
+            $registry = $this->app->make(SettingsRegistry::class);
+
+            // Nothing registered means no screen. An empty settings page is
+            // worse than no link: it reads as "the suite has no settings"
+            // rather than as "no installed addon offers any".
+            if ($registry->all() === []) {
+                return;
+            }
+
+            // The item is built only when the operator can manage at least one
+            // section, because a nav entry leading to a page with nothing on
+            // it is a dead end. NavItem::can() takes a single permission and
+            // there are as many here as there are addons, so the check is done
+            // in the open rather than handed to it.
+            $user = User::current();
+
+            // `can()` is on the Statamic user implementation, not on the
+            // contract the facade is typed against. Guarded rather than
+            // assumed, the same way every other authorisation check in this
+            // package is: a host that swaps the user repository must not take
+            // the Control Panel down with a fatal from the nav builder.
+            if ($user === null || ! method_exists($user, 'can')) {
+                return;
+            }
+
+            foreach (array_keys($registry->all()) as $namespace) {
+                $permission = $registry->permission($namespace);
+
+                if ($permission !== null && $user->can($permission)) {
+                    $nav->create(__('brand-context::messages.nav_settings'))
+                        ->section('Settings')
+                        ->route('brand-context.settings.index')
+                        ->icon('sliders-horizontal');
+
+                    return;
+                }
+            }
+        });
     }
 
     /**

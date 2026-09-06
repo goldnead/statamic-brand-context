@@ -24,4 +24,14 @@ return [
     'remove_confirm_title' => 'Aus :brand entfernen?',
     'remove_confirm_body' => ':user verliert den Zugriff auf alles, was zu :brand gehört. Das Konto und Zuordnungen zu anderen Marken bleiben unberührt.',
     'remove_confirm_button' => 'Aus Marke entfernen',
+
+    // Einstellungs-Bildschirm der Suite
+    'nav_settings' => 'Addon-Einstellungen',
+    'settings_saved' => 'Einstellungen für :addon gespeichert.',
+    'settings_brand_notice' => 'Diese Einstellungen gelten für :brand. Für eine andere Marke oben im Kopf die Marke wechseln.',
+    'settings_follows_config' => 'Was hier nicht geändert wurde, folgt weiter config/:path.php.',
+    'settings_not_writable' => 'Die Tabelle brand_settings fehlt, deshalb lässt sich hier nichts speichern. Unten stehen die Werte aus den Config-Dateien. Zum Ändern einmal php artisan migrate laufen lassen.',
+    'settings_empty_heading' => 'Keines der installierten Addons meldet Einstellungen an.',
+    'settings_empty_item_heading' => 'Add-ons ansehen',
+    'settings_empty_description' => 'Addons mit Einstellungen erscheinen hier, sobald sie installiert sind.',
 ];
