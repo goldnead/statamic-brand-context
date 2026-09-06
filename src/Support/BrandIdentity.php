@@ -67,7 +67,17 @@ class BrandIdentity
         'ink' => '#0a0f1e',
         'accent' => '#0f1629',
         'paper' => '#eef2f8',
-        'muted' => '#98a5bb',
+        // Nicht `--slate #98a5bb` aus der Verkaufsseite, obwohl der Rest von
+        // dort kommt.
+        //
+        // Dort steht er auf dunklem Grund und ist hell genug. Mail und Rechnung
+        // stehen auf WEISSEM Grund, und dort erreicht `#98a5bb` nur 2,5:1 —
+        // unter den 4,5:1, die lesbarer Fliesstext braucht. Ein Nebentext, den
+        // man nicht lesen kann, ist kein Nebentext, sondern ein Fleck.
+        //
+        // `#5b6880` ist derselbe Blauton eine Stufe tiefer und kommt auf 5,6:1.
+        // Gerechnet, nicht geschaetzt.
+        'muted' => '#5b6880',
         'logo' => null,
     ];
 
@@ -258,7 +268,24 @@ class BrandIdentity
      */
     public function fontStack(): string
     {
-        return '-apple-system, "Segoe UI", Roboto, Helvetica, Arial, "DejaVu Sans", sans-serif';
+        // **Ohne Anfuehrungszeichen, und das ist kein Schoenheitsfehler.**
+        //
+        // Der Wert wird in Blade mit `{{ }}` ausgegeben, also HTML-maskiert.
+        // In einem `style="…"`-Attribut ist das harmlos: der HTML-Parser macht
+        // aus `&quot;` wieder ein `"`, bevor CSS es sieht. In einem
+        // `<style>`-BLOCK passiert das nicht — dort steht dann woertlich
+        // `&quot;Segoe UI&quot;`, CSS haelt die ganze Deklaration fuer ungueltig
+        // und wirft sie weg.
+        //
+        // Genau das ist am 06.09.2026 passiert: die Mails standen serifenlos,
+        // die Rechnung als Serifenschrift, und der Unterschied war nirgends im
+        // Code zu sehen — nur im Bild.
+        //
+        // CSS erlaubt mehrteilige Familiennamen auch ohne Anfuehrungszeichen
+        // (`font-family: Segoe UI, Arial`), solange jeder Teil ein gueltiger
+        // Bezeichner ist. Das trifft hier auf alle zu. Damit funktioniert
+        // derselbe Wert in beiden Zusammenhaengen.
+        return '-apple-system, Segoe UI, Roboto, Helvetica, Arial, DejaVu Sans, sans-serif';
     }
 
     /** @return array<string, mixed> */
