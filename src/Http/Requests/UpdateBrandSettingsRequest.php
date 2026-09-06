@@ -100,12 +100,19 @@ class UpdateBrandSettingsRequest extends FormRequest
                 // viertausend Zeichen, ist kein Einstellungswert mehr, sondern
                 // ein Dokument — dieselbe Zahl und dieselbe Begruendung wie
                 // beim Einwilligungstext in `statamic-payments`.
-                'text' => array_values(array_filter([
+                //
+                // Ohne `array_filter` wie bei den Nachbarn darueber: dort
+                // faellt ein `null` heraus, wenn `min`/`max` fehlen. Hier kann
+                // keiner der vier Werte leer sein, und ein Filter, der nie
+                // etwas filtert, behauptet eine Moeglichkeit, die es nicht
+                // gibt. (Larastan sagt es genauso: "does not contain falsy
+                // values, the array will always stay the same.")
+                'text' => [
                     'present',
                     ($field['nullable'] ?? false) ? 'nullable' : 'required',
                     'string',
                     'max:'.($field['max'] ?? 4000),
-                ])),
+                ],
                 default => [
                     'present',
                     ($field['nullable'] ?? false) ? 'nullable' : 'required',
