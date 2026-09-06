@@ -27,6 +27,7 @@ beforeEach(function () {
     // be in place before anything else happens.
     config()->set('widgets', [
         'label' => 'packaged',
+        'withdrawal_text' => null,
         'retention' => ['days' => 30],
         'enabled' => true,
         'redact_keys' => ['authorization'],
@@ -460,4 +461,46 @@ it('reports the permission the addon declared, not one derived from the namespac
     // before this layer use names that a derived `manage widgets settings`
     // would silently stop matching.
     expect(app(SettingsRegistry::class)->permission('widgets'))->toBe('manage widget settings');
+});
+
+it('carries a legal text past the 255-character ceiling that string has', function () {
+    // Der Fall, fuer den es `text` gibt: `offers.withdrawal.text` ist eine
+    // Widerrufsbelehrung. Als `string` waere sie bei 255 Zeichen abgeschnitten
+    // gewesen, also haette sie in die `.env` gemusst — wo sie niemand pflegt
+    // und wo sie nicht je Marke stehen kann.
+    $user = new FakeUser('admin', 'admin@example.com', null, ['manage widget settings']);
+    $lang = str_repeat('Sie haben das Recht, binnen 14 Tagen zu widerrufen. ', 20);
+
+    expect(mb_strlen($lang))->toBeGreaterThan(255);
+
+    $request = settingsRequest([
+        'namespace' => 'widgets',
+        'settings' => ['withdrawal_text' => $lang],
+    ], $user);
+
+    expect(validatorFor($request)->passes())->toBeTrue();
+});
+
+it('still refuses a legal text that has stopped being a setting', function () {
+    // Viertausend Zeichen lassen Platz fuer eine Belehrung. Was laenger ist,
+    // ist ein Dokument und gehoert an eine andere Stelle — dieselbe Zahl und
+    // dieselbe Begruendung wie beim Einwilligungstext in `statamic-payments`.
+    $user = new FakeUser('admin', 'admin@example.com', null, ['manage widget settings']);
+
+    $request = settingsRequest([
+        'namespace' => 'widgets',
+        'settings' => ['withdrawal_text' => str_repeat('x', 4001)],
+    ], $user);
+
+    expect(validatorFor($request)->passes())->toBeFalse();
+});
+
+it('stores a text as the string it is', function () {
+    // Kein eigener Speichertyp: `text` unterscheidet sich von `string` nur in
+    // der Laengengrenze und im Eingabefeld. Ein zweiter Typ im Speicher waere
+    // eine Unterscheidung ohne Unterschied.
+    $this->settings->apply(force: true);
+    $this->settings->for('widgets')->save(['withdrawal_text' => "Zeile eins\nZeile zwei"]);
+
+    expect(config('widgets.withdrawal_text'))->toBe("Zeile eins\nZeile zwei");
 });

@@ -85,11 +85,23 @@ interface ProvidesSettings
      *         'fields' => [
      *             [
      *                 'key' => 'runs.prune_after_days', // path under the config root
-     *                 'type' => 'integer',              // string|integer|boolean|list|select
+     *                 'type' => 'integer',              // string|text|integer|boolean|list|select
      *                 'label' => __('Retention'),
      *                 'description' => __('Days a finished run is kept.'),
      *                 'nullable' => true,               // empty is a real value
      *                 'min' => 1,                       // integer only, optional
+     *             ],
+     *             [
+     *                 // Mehrzeiliger Fliesstext. Wie `string` gespeichert, nur
+     *                 // ohne die 255er-Grenze (Vorgabe 4000, per `max`
+     *                 // aenderbar). Fuer Werte, die Prosa sind und trotzdem dem
+     *                 // Betreiber gehoeren — die Widerrufsbelehrung in `offers`
+     *                 // ist der Fall, fuer den es ihn gibt. Ohne diesen Typ
+     *                 // muesste so ein Text in die `.env`, wo ihn niemand
+     *                 // pflegt, oder er wuerde beim Speichern abgeschnitten.
+     *                 'key' => 'withdrawal.text',
+     *                 'type' => 'text',
+     *                 'label' => __('Widerrufsbelehrung'),
      *             ],
      *             [
      *                 'key' => 'retry.retry_on_status',

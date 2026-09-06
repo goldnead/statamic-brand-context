@@ -88,6 +88,24 @@ class UpdateBrandSettingsRequest extends FormRequest
                         'value'
                     )),
                 ])),
+                // Ein mehrzeiliger Text. Derselbe gespeicherte Typ wie
+                // `string`, nur ohne die Laengengrenze — und genau deswegen
+                // gibt es ihn: `offers.withdrawal.text` ist eine
+                // Widerrufsbelehrung, und die traegt keine 255 Zeichen. Ohne
+                // diesen Typ muesste ein Rechtstext entweder in die `.env`
+                // (wo ihn niemand pflegt) oder er wuerde beim Speichern
+                // abgeschnitten.
+                //
+                // Die Obergrenze steht trotzdem da. Was laenger ist als
+                // viertausend Zeichen, ist kein Einstellungswert mehr, sondern
+                // ein Dokument — dieselbe Zahl und dieselbe Begruendung wie
+                // beim Einwilligungstext in `statamic-payments`.
+                'text' => array_values(array_filter([
+                    'present',
+                    ($field['nullable'] ?? false) ? 'nullable' : 'required',
+                    'string',
+                    'max:'.($field['max'] ?? 4000),
+                ])),
                 default => [
                     'present',
                     ($field['nullable'] ?? false) ? 'nullable' : 'required',

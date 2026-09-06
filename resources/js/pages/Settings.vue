@@ -342,6 +342,21 @@ watch(hasSections, (any) => toggleArchitecturalBackground(! any), { immediate: t
                                         class="font-mono text-sm"
                                         @update:model-value="state[section.namespace].form[field.key] = $event"
                                     />
+                                    <!--
+                                        Mehrzeiliger Fliesstext, nicht Monospace und keine
+                                        acht Zeilen wie bei `list`: hier steht Prosa, kein
+                                        Datenblock. Der Fall, fuer den es ihn gibt, ist die
+                                        Widerrufsbelehrung in `offers` — die traegt keine
+                                        255 Zeichen und gehoert trotzdem dem Betreiber,
+                                        nicht der `.env`.
+                                    -->
+                                    <Textarea
+                                        v-else-if="field.type === 'text'"
+                                        :model-value="state[section.namespace].form[field.key]"
+                                        :rows="6"
+                                        :placeholder="field.nullable ? __('Default') : ''"
+                                        @update:model-value="state[section.namespace].form[field.key] = $event"
+                                    />
                                     <Input
                                         v-else
                                         :model-value="state[section.namespace].form[field.key]"

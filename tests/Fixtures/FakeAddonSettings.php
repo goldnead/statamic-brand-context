@@ -57,6 +57,15 @@ class FakeAddonSettings implements ProvidesSettings
                         'nullable' => false,
                     ],
                     [
+                        // Mehrzeiliger Fliesstext. Der Fall dahinter ist die
+                        // Widerrufsbelehrung in `offers`: ein Rechtstext, der
+                        // dem Betreiber gehoert und keine 255 Zeichen traegt.
+                        'key' => 'withdrawal_text',
+                        'type' => 'text',
+                        'label' => 'Withdrawal terms',
+                        'nullable' => true,
+                    ],
+                    [
                         'key' => 'redact_keys',
                         'type' => 'list',
                         'label' => 'Redacted keys',
