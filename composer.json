@@ -51,7 +51,7 @@
             "description": "Optional multi-brand foundation for Statamic addons.",
             "url": "https://github.com/goldnead/statamic-brand-context",
             "developer": "Adrian Goldner",
-            "developer-url": "https://gldnr.studio"
+            "developer-url": "https://adriangoldner.dev"
         },
         "laravel": {
             "providers": [
