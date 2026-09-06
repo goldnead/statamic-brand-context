@@ -25,6 +25,7 @@ import {
     Header, Button, Card, Panel, Alert, Field, Input, Textarea, Switch, Select, Badge,
     EmptyStateMenu, EmptyStateItem, Icon,
 } from '@statamic/cms/ui';
+import SectionBoundary from '../components/SectionBoundary.vue';
 
 const props = defineProps({
     // Null on an install whose migrations never ran: there is no brand row to
@@ -52,9 +53,28 @@ function toForm(section, values) {
     for (const group of section.groups) {
         for (const field of group.fields) {
             const value = values[field.key];
-            form[field.key] = field.type === 'list'
-                ? (value ?? []).join('\n')
-                : (value ?? (field.type === 'boolean' ? false : ''));
+
+            if (field.type === 'list') {
+                form[field.key] = (value ?? []).join('\n');
+            } else if (field.type === 'boolean') {
+                form[field.key] = value ?? false;
+            } else if (field.type === 'select') {
+                // Eine Auswahl traegt IMMER eine Zeichenkette.
+                //
+                // Die Optionswerte sind Zeichenketten (`normaliseOptions`), und
+                // der Server castet `select` auf der Gegenseite ebenfalls zu
+                // einer. Die Form tat es nicht — und ein Addon, dessen Config
+                // an der Stelle ein `true` stehen hatte, reichte einen `bool`
+                // an die Select-Komponente durch. Die kam damit nicht klar, der
+                // Render-Fehler nahm die GANZE Seite mit, und alle Abschnitte
+                // aller Addons standen leer.
+                //
+                // Gefunden 07.09.2026 beim Bau der Einstellungsseite von
+                // `statamic-invoices` (`tax.prices_include_tax`).
+                form[field.key] = value === null || value === undefined ? '' : String(value);
+            } else {
+                form[field.key] = value ?? '';
+            }
         }
     }
 
@@ -259,11 +279,16 @@ watch(hasSections, (any) => toggleArchitecturalBackground(! any), { immediate: t
         </Alert>
 
         <div class="space-y-8">
-            <section
+            <!-- Jeder Abschnitt in seiner eigenen Grenze: die Feldlisten kommen
+                 aus fremden Addons, und ein Render-Fehler in einem darf nicht
+                 die Seite aller nehmen. Siehe SectionBoundary. -->
+            <SectionBoundary
                 v-for="section in sections"
                 :key="section.namespace"
-                :data-brand-settings-section="section.namespace"
+                :namespace="section.namespace"
+                :title="section.title"
             >
+            <section :data-brand-settings-section="section.namespace">
                 <div class="mb-3 flex items-center justify-between gap-4">
                     <div>
                         <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100">{{ section.title }}</h2>
@@ -377,6 +402,7 @@ watch(hasSections, (any) => toggleArchitecturalBackground(! any), { immediate: t
                     </Panel>
                 </div>
             </section>
+            </SectionBoundary>
         </div>
         </template>
     </div>
