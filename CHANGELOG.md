@@ -1,6 +1,130 @@
 # Changelog
 
-## Unveröffentlicht
+## 1.13.0 — 2026-09-07
+
+**Wer von 1.12.0 kommt, liest die ersten beiden Abschnitte.** In 1.12.0 konnten gespeicherte
+Einstellungen verschwinden, und auf einer Installation mit aktuellem Statamic 6 ließ sich die
+Einstellungs-Schicht gar nicht erst installieren.
+
+### Behoben: das zweite Speichern desselben Werts löschte die Überschreibung
+
+**Das ist stiller Datenverlust, und er trifft jede Installation mit 1.12.0.** Wer einen Wert
+auf der Einstellungsseite änderte, speicherte, und dann ein zweites Mal speicherte, ohne ihn
+noch einmal anzufassen, verlor die Überschreibung. Die Zeile in `brand_settings` wurde
+gelöscht, die Oberfläche zeigte danach wieder den Paket-Default, und niemand bekam eine
+Meldung. Zwei Speichervorgänge hintereinander sind der Normalfall, nicht der Sonderfall:
+es genügt, ein zweites Feld im selben Abschnitt nachzutragen.
+
+Die Ursache: gespeichert wird nur, was vom Paket-Default abweicht, und dieser Vergleichswert
+wurde beim ersten Zugriff eingesammelt. Beim Speichern war der erste Zugriff aber
+`packagedDefault()` selbst, und da lag die Überschreibung des ersten Durchgangs längst auf der
+Live-Config. Der Wert verglich sich also gegen sich selbst, galt als „gleich dem Default" und
+wurde weggeräumt. Der Vergleichswert wird jetzt in `applyNamespace()` festgehalten, bevor
+darüber geschrieben wird, und stammt damit wieder aus der Paketdatei.
+
+Das Löschen bleibt: ein Wert, der ausdrücklich auf den Paket-Default zurückgesetzt wird,
+löscht seine Zeile weiterhin. Nur der Maßstab ist wieder der richtige.
+
+**Nach dem Update prüfen:** verlorene Werte kommen nicht von selbst zurück. Wer zwischen dem
+06.09. und heute Einstellungen gesetzt hat, sieht auf der Seite nach, ob sie noch dastehen.
+
+### Behoben: auf aktuellem Statamic 6 war die Schicht nicht installierbar
+
+`inertiajs/inertia-laravel` war auf `^2.0` festgenagelt. `statamic/cms` v6.31 erlaubt
+Inertia 3, und Composer fand auf einer so aufgesetzten Installation keine Lösung mehr. Die
+Grenze steht jetzt auf `^2.0 || ^3.0`, belegt gegen Inertia 3.3.3 und Statamic 6.31.0. Weil
+die Einstellungsseiten der ganzen Suite an diesem Paket hängen, hatte dort sonst **kein**
+Addon der Familie eine Einstellungsseite.
+
+### Behoben: ein fehlerhaftes Addon nahm die ganze Einstellungsseite mit
+
+Die Feldlisten auf der Seite kommen aus fremdem Code. Bis 1.12.0 reichte ein Fehler in einem
+einzigen Addon, um die Seite für alle anderen leer zu lassen, und im Playground lag die
+Installation deswegen einmal zwanzig Minuten für acht Trupps still.
+
+- **Eine fehlerhafte Anmeldung wirft nicht mehr.** Sie wird protokolliert, das Addon wird
+  ausgelassen, und der Ausfall steht mit Klassenname und Grund oben auf der Seite. Abgesichert
+  sind alle vier Wege in fremden Code — `register()`, `configPath()`, `permission()` und
+  `groups()` —, weil sie alle aus `app->booted()` laufen. Auch mit `APP_DEBUG=true` wird nicht
+  geworfen: der Playground fährt so, und dort war genau das der Ausfall.
+- **Eine Fehlergrenze je Abschnitt.** Ein Fehler beim Rendern eines Abschnitts bleibt in
+  diesem Abschnitt, geht in die Konsole und hinterlässt an der Stelle den Namen des Addons,
+  das ihn verursacht hat. Wie weit die Grenze reicht, steht in der Komponente: sie fängt
+  Fehler aus Kind-Komponenten, nicht solche aus dem eigenen Render von `Settings.vue`. Das ist
+  nachgemessen und nicht behauptet.
+- **Ein `boolean`-Feld mit nicht-boolescher Paketvorgabe** machte den ganzen Abschnitt
+  unspeicherbar (`preference-center`, `sources.*` stand auf `"auto"`). Es wird jetzt feldweise
+  ausgelassen und benannt, statt still zu `true` gebogen zu werden. Ein dritter Zustand gehört
+  als `select` deklariert.
+- **Eine Auswahl trägt eine Zeichenkette.** `select` gab bei numerisch aussehenden Optionen
+  einen anderen Typ zurück, als das Feld deklariert hatte.
+- **Der Platzhalter der Auswahl** heißt jetzt `Choose...` mit drei Punkten, weil Statamic
+  genau diese Zeichenkette übersetzt. Die Fassung mit dem Auslassungszeichen stand englisch
+  auf einer deutschen Seite.
+
+### Neu: `text` als Feldtyp für mehrzeiligen Fließtext
+
+`string` trägt mit seiner 255er-Grenze keinen Rechtstext. `text` ist derselbe gespeicherte
+Typ, kein zweiter im Speicher; anders sind genau zwei Dinge: das Eingabefeld ist ein Textarea
+über sechs Zeilen ohne Monospace, und die Längengrenze ist 4000 statt 255, am Feld per `max`
+änderbar. Was länger ist als viertausend Zeichen, ist kein Einstellungswert mehr, sondern ein
+Dokument.
+
+`statamic-offers` hängt daran: ohne diesen Typ müsste eine Widerrufsbelehrung in die `.env`,
+wo sie niemand pflegt und wo sie nicht je Marke stehen kann, oder sie würde beim Speichern
+abgeschnitten.
+
+### Neu: `BrandIdentity` — eine Quelle dafür, wie eine Marke aussieht
+
+Alles, was ein Käufer nach dem Kauf in der Hand hält — Bestätigungsmail, Rechnungsmail,
+Rechnung — sah nach nichts aus, während die Verkaufsseite gestaltet war. Die naheliegende
+Reparatur hätte die Farben dreimal abgeschrieben; dann gibt es drei Quellen, die auseinander
+laufen. Also gibt es eine, und sie steht in diesem Paket: `BrandIdentity` mit `paper()`,
+`ink()`, `muted()`, `accent()`, `fontStack()`, `logoPath()`, `logoSvg()` und `name()`.
+
+**Keine neue Tabelle.** Die Werte liegen in `Brand::$settings['identity']`, dem JSON-Feld, das
+das Modell ohnehin hat. Reihenfolge: Marke schlägt Config schlägt Vorgabe, ein leerer Wert
+zählt nirgends als Antwort.
+
+Die Regeln haben alle denselben Grund, nämlich dass eine Mail und eine Rechnung beim Anzeigen
+nichts nachladen dürfen:
+
+- **Das Logo ist ein Dateipfad, nie eine URL.** Mail-Programme blockieren entfernte Bilder,
+  ein Logo per `https://` ist beim ersten Öffnen ein leerer Kasten, und eine Rechnung muss
+  zehn Jahre lesbar bleiben. `https://`, `http://`, `//` und `data:` werden abgewiesen, nicht
+  durchgereicht. Ein Pfad ins Leere zählt wie keiner.
+- **Kein Webfont.** DejaVu Sans steht in der Liste, weil die PHP-Druckmaschinen sie
+  mitbringen und ohne sie die Umlaute verlieren.
+- **Farben werden geprüft, bevor sie in ein `style="…"` wandern.** Ein Tippfehler soll eine
+  Rechnung nicht unlesbar machen, und ein ungeprüft eingesetzter Wert wäre ein Weg, fremdes
+  CSS in eine Mail zu schreiben.
+- **Hell, nicht dunkel.** Eine Rechnung wird gedruckt, und eine ganzflächige Tönung kostet
+  dort Toner und Lesbarkeit. `paper()` ist der Grund, `ink()` die Schrift, die Marke trägt
+  über Logo, Linien und `accent()`.
+
+Zwei Fehler daran sind noch in derselben Fassung behoben worden, beide erst im Bild sichtbar:
+
+- **Die Schriftliste brach im `<style>`-Block.** Blade gibt `{{ }}` HTML-maskiert aus. In
+  einem `style="…"`-Attribut ist das harmlos, in einem `<style>`-Block nicht: dort stand
+  wörtlich `&quot;Segoe UI&quot;`, CSS hielt die ganze Deklaration für ungültig und warf sie
+  weg. Die Familiennamen stehen jetzt unquotiert, was CSS erlaubt und was in beiden
+  Zusammenhängen funktioniert.
+- **Der Nebenton war auf weißem Grund nicht lesbar.** `muted` stand auf `#98a5bb`, dem Ton der
+  Verkaufsseite, wo er auf dunklem Grund steht. Auf Weiß erreicht er 2,5:1. Jetzt `#5b6880`,
+  derselbe Blauton eine Stufe tiefer, 5,6:1. Gerechnet, nicht geschätzt.
+
+### Behoben: eine hingeschriebene Wortmarke schlägt den abgeleiteten Markennamen
+
+Die Bestellbestätigung des Suite-Ladens trug „Default" statt „adriangoldner.dev": so heißt die
+Markenzeile in der Datenbank, und ihr Name wurde als Wortmarke eingesetzt — er schlug damit
+die ausdrücklich hingeschriebene `config('brand-context.identity.name')`. Die Regel, die
+vorher fehlte: was jemand hingeschrieben hat, gewinnt gegen das, was wir uns hergeleitet
+haben. `brands.name` ist eine Herleitung und rutscht ans Ende der Kette;
+`settings.identity.name` an der Marke ist hingeschrieben und schlägt die Config weiterhin.
+
+**Wer sich darauf verlassen hat, dass `brands.name` den Markennamen bestimmt, sieht jetzt den
+Wert aus der Config.** Wer den Namen der Datenbankzeile behalten will, trägt ihn unter
+`settings.identity.name` an der Marke ein.
 
 ### Geändert: die Markenzugehörigkeit ist ein Feld am Nutzer, die eigene Seite entfällt
 
@@ -42,6 +166,30 @@ angemeldet hat — behielt sie für den ganzen Prozess einen `null`-Store, und j
 `User::all()` danach starb im Query-Builder. Die Registrierung liegt jetzt in `booted()`. Die
 Testfälle listen den eigenen Provider bewusst **vor** dem von Statamic, weil der Defekt in
 der umgekehrten Reihenfolge unsichtbar ist.
+
+### Kleinigkeit
+
+`developer-url` in der `composer.json` zeigt auf `adriangoldner.dev` statt auf
+`gldnr.studio`, im Statamic-CP wie auf Packagist.
+
+### Was in dieser Fassung wegfällt
+
+Zusammengefasst, damit es niemand überliest:
+
+- die Berechtigung `manage brand members`,
+- die benannte CP-Route `brand-context.users.index` und die übrigen Routen aus
+  `routes/cp.php`,
+- die Klasse `Http\Controllers\Cp\BrandUserController`,
+- der Nav-Punkt **Benutzer:innen → Markenzugehörigkeit**.
+
+Wer eine dieser Stellen im eigenen Code aufruft, insbesondere
+`route('brand-context.users.index')`, bekommt danach einen Fehler. In den Addons dieser
+Familie tut das keines; geprüft wurde über alle Repos unter `projects/statamic-*`.
+
+Unverändert und ausdrücklich nicht betroffen: `brand_user`, `BrandMembership`, die
+`BrandMembers`-Fassade, `Contracts\ProvidesSettings` und die Übergangsregel. Deshalb ist dies
+eine Minor-Fassung und keine Major: weggefallen ist Oberfläche, nicht der programmatische
+Vertrag des Pakets.
 
 ## 1.12.0 — 2026-09-06
 
