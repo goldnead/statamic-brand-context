@@ -85,6 +85,16 @@ class BrandSettingsController extends BaseController
             // would point at a brand the page could not show.
             'multiBrand' => $brand !== null && $this->brands->multiBrandEnabled(),
             'sections' => $sections,
+            // Wer sich nicht anmelden konnte. Die Registry laesst eine
+            // fehlerhafte Anmeldung durchrutschen, damit ein einzelnes Addon
+            // nicht die ganze Installation mitnimmt — und genau deshalb muss
+            // der Ausfall hier stehen. Ein Abschnitt, der einfach fehlt, ist
+            // schlimmer als der Absturz: den hat wenigstens jemand gemerkt.
+            //
+            // Nicht nach Rechten gefiltert, weil ein ausgefallenes Addon keine
+            // Berechtigung mehr nennen kann, die zu pruefen waere. Das Control
+            // Panel ist ohnehin nur fuer Mitarbeitende erreichbar.
+            'failures' => $this->registry->failures(),
             'updateUrl' => cp_route('brand-context.settings.update'),
             // Where the empty state points. Settings appear on this page when
             // an addon that offers them is installed, and the addon list is

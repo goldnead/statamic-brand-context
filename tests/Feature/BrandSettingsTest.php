@@ -6,12 +6,14 @@ use Goldnead\BrandContext\Models\Brand;
 use Goldnead\BrandContext\Models\BrandSetting;
 use Goldnead\BrandContext\Settings\SettingsManager;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
+use Goldnead\BrandContext\Tests\Fixtures\BrokenAddonSettings;
 use Goldnead\BrandContext\Tests\Fixtures\FakeAddonSettings;
 use Goldnead\BrandContext\Tests\Fixtures\FakeUser;
 use Goldnead\BrandContext\Tests\Fixtures\LateAddonSettings;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -72,6 +74,56 @@ it('deletes the row instead of pinning a value equal to the packaged default', f
 
     expect(BrandSetting::query()->where('key', 'retention.days')->count())->toBe(0)
         ->and(config('widgets.retention.days'))->toBe(30);
+});
+
+it('keeps an override when the same value is saved twice in a later process', function () {
+    // Gemeldet am 07.09.2026 an `statamic-offers`, `seller.contact`: einen Wert
+    // ueberschreiben, speichern, dasselbe Formular ein zweites Mal speichern —
+    // und die Zeile war weg, der Wert zurueck auf der Paketvorgabe. Ohne Fehler,
+    // ohne Meldung.
+    //
+    // Der zweite Speichervorgang faellt in einen anderen Prozess als der erste,
+    // und genau da sass es: die Baseline wurde erst beim ersten Zugriff
+    // eingesammelt, und der erste Zugriff war `packagedDefault()` waehrend des
+    // Speicherns. Zu dem Zeitpunkt hatte `apply()` aus `app->booted()` die
+    // Ueberschreibung laengst auf die Config gelegt. Die Baseline hielt also die
+    // Ueberschreibung fuer die Paketvorgabe, der Vergleich traf zu, und die Zeile
+    // wurde als "entspricht ohnehin dem Default" geloescht.
+    //
+    // Ein Test in EINEM Prozess sieht das nie: dort wird die Baseline beim ersten
+    // Speichern noch von der sauberen Config genommen.
+
+    // Prozess 1: der Betreiber ueberschreibt einen Wert.
+    $this->settings->for('widgets')->save(['label' => 'widerruf@nordlicht.example']);
+
+    expect(BrandSetting::query()->where('key', 'label')->count())->toBe(1);
+
+    // Prozess 2: frischer Boot. Die Config steht wieder auf den Werten der
+    // Dateien, der Manager kennt noch keine Baseline, und `apply()` legt die
+    // gespeicherte Ueberschreibung darueber — vor allem anderen.
+    config()->set('widgets.label', 'packaged');
+    app()->forgetInstance('brand-context.settings');
+    app()->forgetInstance(SettingsManager::class);
+
+    $settings = app(SettingsManager::class);
+    $settings->apply(force: true);
+
+    expect(config('widgets.label'))->toBe('widerruf@nordlicht.example');
+
+    // Zweites Speichern desselben Werts. Nichts hat sich geaendert, also darf
+    // sich auch nichts aendern.
+    $settings->for('widgets')->save(['label' => 'widerruf@nordlicht.example']);
+
+    expect(BrandSetting::query()->where('key', 'label')->count())->toBe(1)
+        ->and(config('widgets.label'))->toBe('widerruf@nordlicht.example');
+
+    // Und die Paketvorgabe ist immer noch die Paketvorgabe: "zurueck auf
+    // Standard" muss weiter erreichbar bleiben, sonst haette der Fix nur die
+    // Verwechslung in die andere Richtung gedreht.
+    $settings->for('widgets')->save(['label' => 'packaged']);
+
+    expect(BrandSetting::query()->where('key', 'label')->count())->toBe(0)
+        ->and(config('widgets.label'))->toBe('packaged');
 });
 
 it('keeps false, zero and the empty list apart from unset', function () {
@@ -376,17 +428,164 @@ it('still draws the screen on an install whose migrations never ran', function (
 });
 
 it('refuses two addons claiming the same namespace', function () {
+    // Zwei Pakete, die `automations` beanspruchen, wuerden sich gegenseitig in
+    // die Zeilen schreiben, und wer zuletzt bootet, gewinnt still. Der zweite
+    // wird deshalb nicht uebernommen — aber er nimmt auch nicht den ersten mit.
     $registry = app(SettingsRegistry::class);
 
     $other = new class extends FakeAddonSettings {};
 
-    expect(fn () => $registry->register($other::class))
-        ->toThrow(InvalidArgumentException::class, 'already registered');
+    $registry->register($other::class);
+
+    expect($registry->provider('widgets'))->toBe(FakeAddonSettings::class)
+        ->and($registry->failures()[0]['reason'])->toContain('already registered');
 });
 
 it('refuses a class that does not implement the contract', function () {
-    expect(fn () => app(SettingsRegistry::class)->register(stdClass::class))
-        ->toThrow(InvalidArgumentException::class);
+    app(SettingsRegistry::class)->register(stdClass::class);
+
+    expect(app(SettingsRegistry::class)->failures()[0]['reason'])
+        ->toContain('must implement');
+});
+
+it('keeps the installation up when an addon registers itself wrongly', function () {
+    // Am 07.09.2026 lag der Playground mehrfach vollstaendig auf HTTP 500, jedes
+    // Mal weil ein Nachbar-Addon sich fehlerhaft anmeldete: fehlender Import,
+    // undefinierte Methode, eine Klasse, die den Vertrag nicht erfuellt
+    // (`Goldnead\Notifications\Settings`, zwanzig Minuten). Die Registry warf
+    // beim Booten, und damit war das ganze Control Panel weg — auch fuer die
+    // Addons, die nichts dafuer konnten. Nach dem Veroeffentlichen ist das die
+    // lahmgelegte Installation eines Kunden.
+    $registry = app(SettingsRegistry::class);
+
+    // Ein fehlender Import sieht so aus: der Klassenname existiert nicht.
+    $registry->register('Goldnead\Nachbar\Settings');
+    $registry->register(stdClass::class);
+
+    // Die Installation steht, und das Addon, das sich sauber angemeldet hat,
+    // arbeitet weiter.
+    expect($registry->has('widgets'))->toBeTrue();
+
+    $this->settings->for('widgets')->save(['label' => 'immer noch da']);
+
+    expect(config('widgets.label'))->toBe('immer noch da');
+});
+
+it('leaves out a boolean field whose packaged default is not a boolean, and says so', function () {
+    // Gemessen an `statamic-preference-center`: dessen `sources.*` stehen in
+    // der Config auf dem String `'auto'`. Als `boolean` deklariert weist
+    // `UpdateBrandSettingsRequest` genau diesen Vorgabewert ab — auf einer
+    // frischen Installation ist damit der GANZE Abschnitt unspeicherbar, bis
+    // jemand jedes betroffene Feld von Hand anfasst.
+    Log::spy();
+
+    config()->set('latecomer', ['flag' => true, 'source' => 'auto']);
+
+    $registry = app(SettingsRegistry::class);
+    $registry->register(LateAddonSettings::class);
+
+    // Das kaputte Feld faellt weg, das gesunde daneben bleibt.
+    expect(array_keys($registry->fields('latecomer')))->toBe(['flag']);
+
+    // Und es faellt nicht still weg.
+    $failure = collect($registry->failures())->firstWhere('addon', 'latecomer');
+
+    expect($failure['reason'])->toContain('[source]')
+        ->and($failure['reason'])->toContain('string')
+        ->and($failure['reason'])->toContain('select');
+
+    // Der Abschnitt ist damit wieder speicherbar: die Regeln kennen nur noch
+    // Felder, deren Vorgabewert die Validierung auch passieren kann.
+    $user = new FakeUser('admin', 'admin@example.com', null, ['manage latecomer settings']);
+    $request = settingsRequest(['namespace' => 'latecomer', 'settings' => ['flag' => true]], $user);
+
+    expect(validatorFor($request)->passes())->toBeTrue();
+});
+
+it('keeps a boolean field whose packaged default the validation would accept', function () {
+    // Genau die Werte, die Laravels `boolean`-Regel durchlaesst — sonst waere
+    // die Wache strenger als das, wogegen sie schuetzt.
+    foreach ([true, false, 1, 0, '1', '0', null] as $default) {
+        app(SettingsRegistry::class)->flush();
+        config()->set('latecomer', ['flag' => true, 'source' => $default]);
+
+        $registry = app(SettingsRegistry::class);
+        $registry->register(LateAddonSettings::class);
+
+        expect(array_keys($registry->fields('latecomer')))
+            ->toBe(['flag', 'source'], 'Vorgabe: '.var_export($default, true));
+    }
+});
+
+it('keeps the installation up even with app.debug on', function () {
+    // Die erste Fassung warf bei `APP_DEBUG`, damit ein Addon-Entwickler seinen
+    // Fehler sofort sieht. Der Playground faehrt genau so, und dort arbeiten
+    // acht Trupps gleichzeitig — der Ausnahmezweig war also in der Umgebung
+    // scharf, in der der Schaden am groessten ist.
+    config()->set('app.debug', true);
+
+    $registry = app(SettingsRegistry::class);
+    $registry->register('Goldnead\Nachbar\Settings');
+
+    expect($registry->has('widgets'))->toBeTrue()
+        ->and($registry->failures())->toHaveCount(1);
+});
+
+it('names an addon that could not register instead of leaving a hole', function () {
+    // Die Gegenrichtung, und sie ist der eigentliche Punkt: ein Fehler, der
+    // schweigt, ist keine Loesung. Wer das Werfen abschaltet, muss den Ausfall
+    // sichtbar machen — sonst fehlt der Abschnitt einfach, und niemand merkt es.
+    Log::spy();
+
+    $registry = app(SettingsRegistry::class);
+    $registry->register('Goldnead\Nachbar\Settings');
+
+    // Im Log, mit Ursache.
+    Log::shouldHaveReceived('error')
+        ->withArgs(fn (string $message) => str_contains($message, 'Goldnead\Nachbar\Settings')
+            && str_contains($message, 'must implement'))
+        ->once();
+
+    // Und auf der Seite selbst.
+    $request = Request::create('/cp/brand-settings', 'GET', server: ['HTTP_X_INERTIA' => 'true']);
+    $request->setUserResolver(fn () => new FakeUser('admin', 'admin@example.com', null, ['manage widget settings']));
+
+    $props = app(BrandSettingsController::class)->index($request)->toResponse($request)->getData(true)['props'];
+
+    expect($props['failures'])->toHaveCount(1)
+        ->and($props['failures'][0]['addon'])->toBe('Goldnead\Nachbar\Settings')
+        ->and($props['failures'][0]['reason'])->toContain('must implement');
+});
+
+it('drops an addon whose field list throws, rather than showing it empty', function () {
+    // `settingsGroups()` laeuft aus `applyNamespace()` und damit aus
+    // `app->booted()`. Eine Absicherung allein in `register()` haette diesen
+    // Weg offen gelassen: das Addon meldet sich sauber an und faellt erst beim
+    // Aufzaehlen seiner Felder auseinander — mit demselben Ergebnis, einer
+    // Installation auf 500.
+    Log::spy();
+
+    config()->set('kaputt', ['flag' => false]);
+
+    $registry = app(SettingsRegistry::class);
+    $registry->register(BrokenAddonSettings::class);
+
+    $this->settings->apply(force: true);
+
+    // Die Anmeldung faellt ganz weg statt halb zu stehen: ein registriertes
+    // Addon mit null Feldern waere ein leerer Abschnitt, den niemand als Fehler
+    // liest.
+    expect($registry->has('kaputt'))->toBeFalse()
+        ->and(config('widgets.label'))->toBe('packaged');
+
+    $request = Request::create('/cp/brand-settings', 'GET', server: ['HTTP_X_INERTIA' => 'true']);
+    $request->setUserResolver(fn () => new FakeUser('admin', 'admin@example.com', null, ['manage widget settings']));
+
+    $props = app(BrandSettingsController::class)->index($request)->toResponse($request)->getData(true)['props'];
+
+    expect(Arr::pluck($props['sections'], 'namespace'))->toBe(['widgets'])
+        ->and($props['failures'][0]['addon'])->toBe('kaputt')
+        ->and($props['failures'][0]['reason'])->toContain('Goldnead\Kaputt\Fields');
 });
 
 /**

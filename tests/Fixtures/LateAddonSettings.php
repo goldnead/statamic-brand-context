@@ -41,6 +41,16 @@ class LateAddonSettings implements ProvidesSettings
                         'label' => 'Flag',
                         'nullable' => false,
                     ],
+                    [
+                        // Als `boolean` deklariert, in der Config steht dort in
+                        // einem der Tests der String `'auto'` — der Fall aus
+                        // `statamic-preference-center`, der einen ganzen
+                        // Abschnitt unspeicherbar machte.
+                        'key' => 'source',
+                        'type' => 'boolean',
+                        'label' => 'Source',
+                        'nullable' => false,
+                    ],
                 ],
             ],
         ];

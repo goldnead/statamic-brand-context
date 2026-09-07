@@ -156,6 +156,30 @@ class SettingsManager
             return;
         }
 
+        // Erst die Paketwerte festhalten, dann darueber schreiben. Vor allem
+        // anderen in dieser Methode.
+        //
+        // `baselineFor()` sammelt lazy ein, und ohne diese Zeile war der erste
+        // Zugriff auf einen unveraenderten Root nicht dieses `apply()`, sondern
+        // `packagedDefault()` beim naechsten Speichern — die Restore-Schleife
+        // unten laeuft beim ersten Anwenden ueber eine leere Liste und ruft
+        // nichts. Bis dahin lag die Ueberschreibung aber laengst auf der Config,
+        // und die Baseline hielt sie fuer die Paketvorgabe.
+        //
+        // Was das kostete (gefunden 07.09.2026 an `statamic-offers`,
+        // `seller.contact`): der Betreiber speichert denselben Wert ein zweites
+        // Mal, `$value === packagedDefault()` trifft zu, und die Zeile wird als
+        // "entspricht ohnehin dem Default" geloescht. Der Wert faellt beim
+        // naechsten Aufruf auf die Paketvorgabe zurueck, ohne Fehler und ohne
+        // Meldung. In einem einzigen Prozess ist das unsichtbar: dort wird die
+        // Baseline beim ersten Speichern noch von der sauberen Config genommen.
+        //
+        // Das Loeschen bleibt richtig — eine Zeile, die einen Wert auf seinen
+        // eigenen Default festnagelt, friert die Site gegen kuenftige Upgrades
+        // ein. Nur der Vergleichswert muss der aus der Datei sein und nicht der,
+        // der gerade in der Config steht.
+        $this->baselineFor($root);
+
         // Undo only what the previous apply wrote, key by key.
         //
         // The first version reset the whole config root

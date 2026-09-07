@@ -71,6 +71,34 @@ describe('Suite settings screen', () => {
         expect(toggleArchitecturalBackground).toHaveBeenLastCalledWith(false);
     });
 
+    it('nennt ein Addon, das sich nicht anmelden konnte', () => {
+        // Die Registry ueberspringt eine fehlerhafte Anmeldung, damit ein
+        // einzelnes Addon nicht die ganze Installation mitnimmt. Genau deshalb
+        // muss der Ausfall hier stehen: ein Abschnitt, der einfach fehlt, faellt
+        // niemandem auf. Der Absturz fiel wenigstens auf.
+        const wrapper = mount(Settings, {
+            props: props({ failures: [{ addon: 'Goldnead\\Nachbar\\Settings', reason: 'Class not found' }] }),
+        });
+
+        const alert = wrapper.find('[data-brand-settings-failures]');
+
+        expect(alert.exists()).toBe(true);
+        expect(alert.text()).toContain('Goldnead\\Nachbar\\Settings');
+        expect(alert.text()).toContain('Class not found');
+    });
+
+    it('meldet den Ausfall auch dann, wenn kein Abschnitt uebrig bleibt', () => {
+        // Sind alle Abschnitte ausgefallen, ist `sections` leer — und der
+        // Leerzustand wuerde behaupten, kein Addon melde Einstellungen an. Sie
+        // melden an, sie kommen nur nicht durch.
+        const wrapper = mount(Settings, {
+            props: props({ sections: [], failures: [{ addon: 'Nachbar', reason: 'Class not found' }] }),
+        });
+
+        expect(wrapper.find('[data-brand-settings-empty]').exists()).toBe(false);
+        expect(wrapper.find('[data-brand-settings-failures]').exists()).toBe(true);
+    });
+
     it('says why instead of offering a Save that cannot work', () => {
         // What an upgrade without migrations looks like. Reading still works,
         // so the page keeps showing the packaged values; offering Save would

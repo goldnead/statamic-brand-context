@@ -22,7 +22,7 @@
     },
     "require": {
         "php": "^8.2",
-        "inertiajs/inertia-laravel": "^2.0",
+        "inertiajs/inertia-laravel": "^2.0 || ^3.0",
         "laravel/framework": "^12.40|^13.0",
         "statamic/cms": "^6.0"
     },

@@ -33,6 +33,10 @@ const props = defineProps({
     brand: { type: Object, default: null },
     multiBrand: { type: Boolean, default: false },
     sections: { type: Array, required: true },
+    // Addons, die sich nicht anmelden konnten. Die Registry ueberspringt sie,
+    // damit ein einzelnes fehlerhaftes Addon nicht die ganze Installation
+    // mitnimmt — und deshalb muss hier stehen, dass sie fehlen.
+    failures: { type: Array, default: () => [] },
     updateUrl: { type: String, required: true },
     addonsUrl: { type: String, required: true },
     writable: { type: Boolean, default: true },
@@ -215,6 +219,16 @@ function save(section) {
 const hasSections = computed(() => props.sections.length > 0);
 
 /**
+ * Der Leerzustand gilt nur, wenn wirklich nichts da ist.
+ *
+ * Sind alle Abschnitte ausgefallen, ist `sections` ebenfalls leer — und
+ * "keines der installierten Addons meldet Einstellungen an" waere dann die
+ * falsche Auskunft: sie melden an, sie kommen nur nicht durch. In dem Fall
+ * traegt die Seite ihre Ueberschrift und die Ausfallmeldung.
+ */
+const showsEmptyState = computed(() => ! hasSections.value && props.failures.length === 0);
+
+/**
  * Core puts the architectural-lines treatment behind an empty state, and only
  * there — a full page of forms on top of it reads as decoration nobody chose.
  *
@@ -225,7 +239,7 @@ const hasSections = computed(() => props.sections.length > 0);
  * lines switched on behind every section. Guessing a signature is exactly what
  * the studio's UI standard says not to do, and this is what it costs.
  */
-watch(hasSections, (any) => toggleArchitecturalBackground(! any), { immediate: true });
+watch(showsEmptyState, (empty) => toggleArchitecturalBackground(empty), { immediate: true });
 </script>
 
 <template>
@@ -236,7 +250,7 @@ watch(hasSections, (any) => toggleArchitecturalBackground(! any), { immediate: t
              way core does it (pages/forms/Index.vue:28-33). <Header> carries a
              toolbar and a page-action slot, and a toolbar over nothing is what
              makes an empty screen look like a broken one. -->
-        <template v-if="! hasSections">
+        <template v-if="showsEmptyState">
             <header class="py-8 pt-16 text-center">
                 <h1 class="flex items-center justify-center gap-2 text-[25px] font-medium antialiased sm:gap-3">
                     <Icon name="sliders-horizontal" class="size-5 text-gray-500" />{{ t('nav_settings') }}
@@ -276,6 +290,20 @@ watch(hasSections, (any) => toggleArchitecturalBackground(! any), { immediate: t
              rather than handing over an SQL error on the first Save. -->
         <Alert v-if="! writable" variant="warning" class="mb-6" data-brand-settings-readonly>
             {{ t('settings_not_writable') }}
+        </Alert>
+
+        <!-- Ein Addon hat sich nicht anmelden koennen. Die Registry hat es
+             uebersprungen statt zu werfen, damit nicht ein einzelnes Addon das
+             ganze Control Panel mitnimmt. Der Preis dafuer ist, dass der
+             Ausfall sonst niemandem auffiele: sein Abschnitt fehlt einfach.
+             Deshalb steht er hier, mit Namen und Grund. -->
+        <Alert v-if="failures.length" variant="error" class="mb-6" data-brand-settings-failures>
+            <p>{{ t('settings_failed_heading') }}</p>
+            <ul class="mt-2 list-inside list-disc space-y-0.5">
+                <li v-for="failure in failures" :key="failure.addon">
+                    <span class="font-mono text-sm">{{ failure.addon }}</span> — {{ failure.reason }}
+                </li>
+            </ul>
         </Alert>
 
         <div class="space-y-8">
@@ -351,12 +379,21 @@ watch(hasSections, (any) => toggleArchitecturalBackground(! any), { immediate: t
                                          empty string counts as a selection and
                                          renders a blank trigger with a clear
                                          button offering to clear nothing
-                                         (ui-vocabulary, antipattern table). -->
+                                         (ui-vocabulary, antipattern table).
+
+                                         Der Platzhalter heisst `Choose...` mit
+                                         drei Punkten, nicht mit dem
+                                         Auslassungszeichen: Statamic uebersetzt
+                                         genau diese Zeichenkette
+                                         (`lang/de.json`: "Choose..." =>
+                                         "Auswählen…"). Die Fassung mit `…`
+                                         trifft keinen Eintrag und stand deshalb
+                                         englisch auf einer deutschen Seite. -->
                                     <Select
                                         v-else-if="field.type === 'select'"
                                         :model-value="state[section.namespace].form[field.key] || null"
                                         :options="field.options"
-                                        :placeholder="__('Choose…')"
+                                        :placeholder="__('Choose...')"
                                         adaptive-width
                                         @update:model-value="state[section.namespace].form[field.key] = $event"
                                     />
