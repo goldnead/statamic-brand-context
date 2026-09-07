@@ -2,9 +2,39 @@
 
 ## 1.13.0 — 2026-09-07
 
-**Wer von 1.12.0 kommt, liest die ersten beiden Abschnitte.** In 1.12.0 konnten gespeicherte
-Einstellungen verschwinden, und auf einer Installation mit aktuellem Statamic 6 ließ sich die
-Einstellungs-Schicht gar nicht erst installieren.
+**Wer von 1.12.0 kommt, liest die ersten drei Abschnitte.** In 1.12.0 galt ein Teil der
+gespeicherten Einstellungen nicht, gespeicherte Werte konnten verschwinden, und auf einer
+Installation mit aktuellem Statamic 6 ließ sich die Einstellungs-Schicht gar nicht erst
+installieren.
+
+### Behoben: die Einstellungen später gebooteter Addons galten nicht
+
+**Das trifft jede Installation mit 1.12.0, die mehr als eine Handvoll Addons der Suite fährt,
+und es ist von außen nicht zu sehen.** Der Betreiber trägt seinen Wert ein, die Seite zeigt
+ihn nach dem Neuladen, die Zeile steht in `brand_settings` — und `config()` antwortet für den
+Rest des Prozesses mit der Paketvorgabe. Auf einer Rechnung steht dann die Verkäuferangabe aus
+dem Paket statt der eingetragenen.
+
+Die Ursache liegt in der Reihenfolge. `SettingsManager::apply()` läuft aus `app->booted()` und
+genau einmal, damit vorher jedes Addon sein `boot()` hatte. Wer sich danach anmeldet, war beim
+Anwenden nicht dabei, und nichts holt das nach: `brandChanged()` greift nur bei einem
+Markenwechsel, und im Einmarken-Betrieb wechselt die Marke nie.
+
+Gemessen am 07.09.2026 im Playground mit 22 angemeldeten Namensräumen und
+`BRAND_CONTEXT_MULTI_BRAND=false`: von zwölf gespeicherten Werten kamen sieben an. Die fünf,
+die nicht ankamen, gehörten zu `automations`, `invoices`, `notifications`, `payments` und
+`webhook-manager` — den Addons, die sich als Letzte anmeldeten. Welche es trifft, hängt an der
+Provider-Reihenfolge der jeweiligen Installation; dass es welche trifft, hängt an nichts.
+
+Behoben wird es an einer Stelle: eine Anmeldung, die nach dem ersten `apply()` kommt, wendet
+ihre eigenen Werte selbst an (`SettingsRegistry::register()` → `SettingsManager::applyLate()`).
+Einmal je nachzügelndem Addon, nicht einmal je Bootzyklus. Der Grund für `app->booted()` bleibt
+unangetastet, das erste `apply()` wartet weiterhin auf das `boot()` aller Addons. Nach der
+Reparatur greifen im selben Playground zwölf von zwölf.
+
+Der Test, der diesen Bereich seit 1.12.0 abdeckte, rief `apply()` selbst ein zweites Mal auf
+und belegte damit nur, dass ein zweites `apply()` den Nachzügler mitnimmt. Er stellt jetzt die
+Reihenfolge des Betriebs nach und läuft ohne dieses zweite `apply()`.
 
 ### Behoben: das zweite Speichern desselben Werts löschte die Überschreibung
 

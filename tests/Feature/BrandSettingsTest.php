@@ -294,19 +294,24 @@ it('restores the previous brand config after runFor', function () {
 });
 
 it('applies an addon that registered after the first apply', function () {
-    // The cheap exit in apply() used to key on the brand alone. An addon that
-    // registered late — a `bootAddon()` that runs after `booted`, an addon
-    // enabled at runtime, an Octane worker on a container that booted
-    // differently — then never had its overrides pushed: the row is there, the
-    // save said it worked, and config() answers with the packaged default for
-    // the rest of the process. On a single-brand install nothing ever changes
-    // brand, so nothing ever corrects it.
-    $this->settings->apply();
-
+    // Ein Addon, das sich spaet anmeldet: ein `bootAddon()`, das nach `booted`
+    // laeuft, ein zur Laufzeit eingeschaltetes Addon, ein Octane-Arbeiter auf
+    // einem anders gebooteten Container. Die Zeile liegt in der Tabelle, das
+    // Speichern hat gemeldet, dass es geklappt hat — und `config()` antwortet
+    // fuer den Rest des Prozesses mit der Paketvorgabe.
+    //
+    // **Dieser Test hat die Lage zwei Tage lang nicht geprueft, sondern
+    // umgangen.** Er rief `apply()` selbst ein zweites Mal auf und belegte
+    // damit nur, dass ein zweites `apply()` den Nachzuegler mitnimmt. Sein
+    // eigener Kommentar benannte woertlich, was er nicht prueft: auf einer
+    // Einmarken-Installation wechselt die Marke nie, also stoesst nichts je ein
+    // zweites `apply()` an. Gemessen am 07.09.2026 im Playground: sieben von
+    // zwoelf gespeicherten Werten kamen an.
+    //
+    // Deshalb hier die echte Reihenfolge des Betriebs: die Zeilen liegen in der
+    // Datenbank, die Provider booten nacheinander, `apply()` laeuft aus
+    // `app->booted()` **einmal**, und danach meldet sich noch ein Addon an.
     config()->set('latecomer', ['flag' => false]);
-
-    $registry = app(SettingsRegistry::class);
-    $registry->register(LateAddonSettings::class);
 
     BrandSetting::query()->create([
         'brand_id' => app('brand-context')->currentId(),
@@ -315,6 +320,17 @@ it('applies an addon that registered after the first apply', function () {
         'value' => true,
     ]);
 
+    $this->settings->apply();
+
+    app(SettingsRegistry::class)->register(LateAddonSettings::class);
+
+    // Kein zweites `apply()`. Die Anmeldung selbst holt nach, was sie verpasst
+    // hat.
+    expect(config('latecomer.flag'))->toBeTrue();
+
+    // Und der naechste `apply()` — der in einer Anfrage durchaus kommt — nimmt
+    // es nicht wieder weg. Die Liste der angewandten Namensraeume muss den
+    // Nachzuegler kennen, sonst faellt der billige Ausstieg auseinander.
     $this->settings->apply();
 
     expect(config('latecomer.flag'))->toBeTrue();

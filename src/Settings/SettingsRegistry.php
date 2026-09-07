@@ -73,16 +73,66 @@ class SettingsRegistry
     public function register(string $provider): void
     {
         try {
-            $this->add($provider);
+            $namespace = $this->add($provider);
         } catch (Throwable $e) {
             $this->fail($provider, $e);
+
+            return;
+        }
+
+        $this->catchUp($namespace);
+    }
+
+    /**
+     * Nachholen, was diese Anmeldung verpasst hat.
+     *
+     * `SettingsManager::apply()` laeuft aus `app->booted()` und genau einmal.
+     * Wer sich danach anmeldet, war beim Anwenden nicht dabei: seine Zeilen
+     * liegen in der Tabelle, die Einstellungsseite zeigt sie, und `config()`
+     * antwortet fuer den Rest des Prozesses mit dem Paketwert.
+     *
+     * Gemessen am 07.09.2026 im Playground mit `BRAND_CONTEXT_MULTI_BRAND=false`:
+     * von zwoelf gespeicherten Werten kamen sieben an. Die Anmeldungen kommen
+     * dort in zwei Gruppen, und die zweite Gruppe — automations, invoices,
+     * notifications, payments, webhook-manager — meldet sich nach dem `booted`
+     * von brand-context an. Nichts korrigiert das spaeter: `brandChanged()`
+     * greift nur bei einem Markenwechsel, und im Einmarken-Betrieb wechselt die
+     * Marke nie.
+     *
+     * **Warum hier und nicht ein zweites `apply()` am Ende des Bootens.** Ein
+     * nachgeschobenes `apply()` waere einmal je Bootzyklus richtig geraten und
+     * beim naechsten Nachzuegler wieder falsch. Hier ist es einmal je
+     * Anmeldung, an der Stelle, die als einzige weiss, dass eine dazugekommen
+     * ist. Der Grund fuer `app->booted()` bleibt unangetastet: das erste
+     * `apply()` wartet weiterhin, bis jedes Addon sein `boot()` hatte.
+     *
+     * **Der Container wird nur gefragt, nicht bemueht.** `resolved()` statt
+     * `make()`: solange der Manager nicht existiert, hat auch kein `apply()`
+     * stattgefunden, und ihn hier zu bauen wuerde die Reihenfolge verschieben,
+     * die diese Klasse gerade zu retten versucht.
+     *
+     * Ein Fehler beim Nachholen darf die Installation so wenig mitnehmen wie
+     * eine fehlerhafte Anmeldung — diese Methode laeuft im `boot()` eines
+     * fremden Addons.
+     */
+    protected function catchUp(string $namespace): void
+    {
+        if (! app()->resolved(SettingsManager::class)) {
+            return;
+        }
+
+        try {
+            app(SettingsManager::class)->applyLate($namespace);
+        } catch (Throwable $e) {
+            $this->fail($namespace, $e);
         }
     }
 
     /**
      * @param  class-string<ProvidesSettings>  $provider
+     * @return string Der belegte Namensraum.
      */
-    protected function add(string $provider): void
+    protected function add(string $provider): string
     {
         if (! is_subclass_of($provider, ProvidesSettings::class)) {
             throw new InvalidArgumentException(
@@ -106,6 +156,8 @@ class SettingsRegistry
         }
 
         $this->providers[$namespace] = $provider;
+
+        return $namespace;
     }
 
     /**

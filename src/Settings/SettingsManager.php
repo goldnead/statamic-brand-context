@@ -145,6 +145,49 @@ class SettingsManager
     }
 
     /**
+     * Ein Addon anwenden, das sich nach dem ersten {@see apply()} angemeldet
+     * hat.
+     *
+     * Gerufen aus {@see SettingsRegistry::register()}, also genau einmal je
+     * Nachzuegler — nicht einmal je Bootzyklus. Der Unterschied ist der Grund
+     * fuer diese Methode: ein zweites `apply()` hinterherzuschieben waere beim
+     * uebernaechsten Addon wieder zu frueh gewesen.
+     *
+     * Nichts passiert, solange `apply()` nie lief. Dann steht die Anmeldung
+     * rechtzeitig, und das erste `apply()` aus `app->booted()` nimmt sie
+     * ohnehin mit.
+     */
+    public function applyLate(string $namespace): void
+    {
+        if (! $this->everApplied) {
+            return;
+        }
+
+        // `appliedFor`, nicht `currentBrandId()`. Zwei Gruende, und beide sind
+        // gemessen.
+        //
+        // Fachlich: die Aufgabe ist, diesen einen Namensraum in denselben
+        // Zustand zu bringen wie die uebrige Config — und die steht auf der
+        // Marke, fuer die zuletzt angewandt wurde. Ist die Marke inzwischen
+        // gewechselt, hat {@see brandChanged()} ohnehin schon alles neu gelegt
+        // und `appliedFor` mitgezogen; ein Wechsel ohne dieses Nachziehen waere
+        // fuer alle Namensraeume falsch, nicht nur fuer den neuen.
+        //
+        // Praktisch: `currentBrandId()` fragt `BrandManager::default()`, und
+        // das merkt sich die Standardmarke fuer den Rest des Prozesses. Eine
+        // Anmeldung ist der falsche Anlass dafuer. Der Test „still draws the
+        // screen on an install whose migrations never ran" faellt genau
+        // darueber um.
+        $this->applyNamespace($namespace, $this->appliedFor);
+
+        // Frisch aus der Registry statt angehaengt: der billige Ausstieg in
+        // apply() vergleicht diese Liste mit `array_keys($registry->all())`,
+        // und die beiden muessen Zeichen fuer Zeichen uebereinstimmen, sonst
+        // laeuft jeder weitere apply() wieder ueber alles.
+        $this->appliedNamespaces = array_keys($this->registry->all());
+    }
+
+    /**
      * Reset one namespace to its packaged values and write this brand's
      * overrides over the top.
      */
