@@ -191,6 +191,14 @@ class NamespaceSettings
                 // that was just taken away.
                 if ($root !== null && $root !== '') {
                     $this->config->set($root.'.'.$key, $value);
+
+                    // Und gemeldet, denn das hier ist der zweite Schreiber auf
+                    // den Root. Solange fuer ihn noch keine Baseline steht — ein
+                    // Addon, das seine Config erst in `bootAddon()`
+                    // zusammenfuehrt — wuerde `baselineFor()` diesen Wert sonst
+                    // beim naechsten Lesen fuer die Paketvorgabe halten und ihn
+                    // dauerhaft festhalten.
+                    $this->manager->markConfigRootWritten($root);
                 }
 
                 continue;

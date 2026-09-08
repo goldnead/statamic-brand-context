@@ -6,6 +6,7 @@ use Goldnead\BrandContext\BrandManager;
 use Goldnead\BrandContext\Concerns\RunsForEachBrand;
 use Goldnead\BrandContext\Queue\BrandOnQueue;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
+use Illuminate\Support\Facades\Log;
 
 /**
  * The settings layer: one place that knows every registered namespace, the
@@ -81,6 +82,37 @@ class SettingsManager
      * @var array<string, array<int, string>>
      */
     protected array $applied = [];
+
+    /**
+     * The config roots this layer has already written onto.
+     *
+     * Only interesting while a root has no baseline yet. {@see baselineFor()}
+     * refuses to capture one from a config this layer has itself written to,
+     * because that snapshot would record its own write as the packaged
+     * default — the `statamic-offers` failure, where saving the same value a
+     * second time deleted the row and the value fell back to the package.
+     *
+     * **Every write to a namespace's config root has to land here**, not only
+     * the one in {@see applyNamespace()}. The second writer is
+     * {@see NamespaceSettings::write()}, which puts the file's value back by
+     * hand when it deletes a row; it reports through
+     * {@see markConfigRootWritten()}. A third writer that forgets to would
+     * reopen exactly this hole, quietly.
+     *
+     * @var array<string, true>
+     */
+    protected array $wroteInto = [];
+
+    /**
+     * The namespaces already warned about an empty config root.
+     *
+     * Once per namespace and process. {@see applyNamespace()} runs again on
+     * every brand switch, and a warning inside a loop is a warning nobody
+     * reads.
+     *
+     * @var array<string, true>
+     */
+    protected array $warnedAboutEmptyRoot = [];
 
     /** @var array<string, NamespaceSettings> */
     protected array $scopes = [];
@@ -221,7 +253,17 @@ class SettingsManager
         // eigenen Default festnagelt, friert die Site gegen kuenftige Upgrades
         // ein. Nur der Vergleichswert muss der aus der Datei sein und nicht der,
         // der gerade in der Config steht.
-        $this->baselineFor($root);
+        //
+        // Ist der Root in diesem Moment leer, wird nichts festgehalten und der
+        // Aufrufer wird einmal laut ({@see baselineFor()},
+        // {@see warnAboutEmptyRoot()}). Ein leerer Root heisst hier immer, dass
+        // ein Addon seine Config erst in `bootAddon()` zusammenfuehrt, und das
+        // ist zu spaet.
+        $baseline = $this->baselineFor($root);
+
+        if ($baseline === []) {
+            $this->warnAboutEmptyRoot($namespace, $root);
+        }
 
         // Undo only what the previous apply wrote, key by key.
         //
@@ -238,8 +280,13 @@ class SettingsManager
         //
         // Only keys this layer itself put there are taken back. Anything else
         // in the root was never ours to touch.
+        //
+        // Aus der oben erfassten Baseline, nicht aus einem erneuten
+        // `baselineFor()`: solange keine zustande kam, liest die Methode jedes
+        // Mal frisch aus der Config, und ab dem zweiten Schluessel stuende dort
+        // schon, was diese Schleife selbst gerade geschrieben hat.
         foreach ($this->applied[$namespace] ?? [] as $key) {
-            $this->config->set($root.'.'.$key, data_get($this->baselineFor($root), $key));
+            $this->config->set($root.'.'.$key, data_get($baseline, $key));
         }
 
         $this->applied[$namespace] = [];
@@ -264,6 +311,23 @@ class SettingsManager
 
             $this->config->set($root.'.'.$key, $value);
             $this->applied[$namespace][] = $key;
+            $this->markConfigRootWritten($root);
+        }
+    }
+
+    /**
+     * Report that this layer put a value onto a config root.
+     *
+     * Public because {@see NamespaceSettings::write()} is the second writer:
+     * when it deletes a row it puts the file's value back on the live config by
+     * hand, and it does so *before* the `apply()` that follows. Without this
+     * report, {@see baselineFor()} would afterwards read that write back as if
+     * it were the package's own value.
+     */
+    public function markConfigRootWritten(string $root): void
+    {
+        if ($root !== '') {
+            $this->wroteInto[$root] = true;
         }
     }
 
@@ -274,10 +338,89 @@ class SettingsManager
      * it happens before anything is applied — and a host that edited its own
      * published `config/automations.php` must be able to get back to *its*
      * value, not to the copy inside the package.
+     *
+     * **An empty root is not memoised.** The capture runs from `app->booted()`,
+     * and Statamic calls `bootAddon()` from a *later* `app->booted()` callback
+     * of its own. An addon that merges its own config there — `mergeConfigFrom`
+     * in `bootAddon()` instead of `register()` — is not in the config yet at
+     * this moment, and a `??=` would freeze that emptiness for the whole
+     * process. What that costs is silent: `packagedDefault()` then answers
+     * `null` for every key, no stored value ever equals its packaged default,
+     * no row in `brand_settings` is ever deleted, and the installation is
+     * pinned against future package updates without an error and without a
+     * message. Measured on 08.09.2026 in `statamic-lead-magnets` (`ad6bd81`)
+     * and `statamic-marketing`.
+     *
+     * Not memoising costs a re-read per call until the root has content, and it
+     * lets a later, correct call still set the baseline. For a caller that
+     * merges in `register()` nothing changes at all: its first call already
+     * sees the full root and memoises exactly as before.
+     *
+     * **But never re-read a root this layer has already written to.** Once an
+     * override sits on the config, a fresh snapshot would record that override
+     * as the packaged default — which is the `statamic-offers` failure from
+     * 07.09.2026, where the second save of the same value deleted the row and
+     * the value silently fell back to the package. Frozen is bad; losing the
+     * operator's value is worse. So for that root the answer stays "nothing
+     * known", exactly as it was before this guard existed.
+     *
+     * **What that means for the installation that already lived with the bug.**
+     * A namespace whose first apply both found an empty root *and* had a stored
+     * override to write is written to in that same breath, so it does not heal
+     * inside the running process — it behaves exactly as it did before, only
+     * now it says so once in the log. What heals it is repairing the addon and
+     * restarting: on the next process the root is filled before the capture and
+     * nothing is ever written first. A namespace with no stored override yet —
+     * the fresh installation, the one where the first save is still to come —
+     * heals within the same process.
      */
     public function baselineFor(string $root): mixed
     {
-        return $this->baseline[$root] ??= $this->config->get($root, []);
+        if (array_key_exists($root, $this->baseline)) {
+            return $this->baseline[$root];
+        }
+
+        if (isset($this->wroteInto[$root])) {
+            return [];
+        }
+
+        $packaged = $this->config->get($root, []);
+
+        if ($packaged === null || $packaged === []) {
+            return [];
+        }
+
+        return $this->baseline[$root] = $packaged;
+    }
+
+    /**
+     * Say once, out loud, that a namespace was applied against an empty config
+     * root.
+     *
+     * There is no legitimate reason for this: `ProvidesSettings` asks for
+     * "the config root that unset values keep following", and all twenty-two
+     * addons in the family ship a `config/<root>.php` for the root they name.
+     * An empty one at this point means the file was not merged yet, and the
+     * only known cause is a `mergeConfigFrom` sitting in `bootAddon()` instead
+     * of `register()`.
+     *
+     * A warning rather than a throw: this runs inside `app->booted()` for every
+     * registered addon, and one addon's ordering mistake must not take the
+     * installation of the other seventeen with it — the same reasoning as
+     * {@see SettingsRegistry::register()}.
+     */
+    protected function warnAboutEmptyRoot(string $namespace, string $root): void
+    {
+        if (isset($this->warnedAboutEmptyRoot[$namespace])) {
+            return;
+        }
+
+        $this->warnedAboutEmptyRoot[$namespace] = true;
+
+        Log::warning(
+            'brand-context: the config root of a settings namespace was empty when its settings were applied, so no packaged default can be told apart from a stored one and no setting will ever be reset. Merge the addon config in register(), not in bootAddon(): Statamic boots addons from a later app->booted() callback than this layer.',
+            ['namespace' => $namespace, 'config_root' => $root],
+        );
     }
 
     /** What one key's packaged default is, ignoring any applied override. */

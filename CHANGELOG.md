@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.13.1 — 2026-09-08
+
+### Fixed: an addon that merges its config too late no longer pins every setting for good
+
+**Nothing to do on an installation whose addons are in order. Everything to do on one whose
+addons are not, because until now it could not tell.** The settings layer takes the package
+values of a namespace as its baseline the first time it applies, and that runs from
+`app->booted()`. Statamic calls `bootAddon()` from a *later* `app->booted()` callback of its own.
+An addon that merges its own config there — `mergeConfigFrom` in `bootAddon()` instead of
+`register()` — is not in the config at that moment, and a `??=` froze that emptiness for the rest
+of the process.
+
+What it cost was silent, and worse than a red test: `packagedDefault()` then answers `null` for
+every key of that namespace, no stored value ever equals its packaged default, no row in
+`brand_settings` is ever deleted. Every setting stays pinned to its value and the installation is
+frozen against future package updates, without an error and without a message. Measured on
+2026-09-08 in `statamic-lead-magnets` and `statamic-marketing`; both are repaired at their own
+end.
+
+Two things changed here. An empty config root is no longer memoised, so a later, correct call can
+still set the baseline — for an addon that merges in `register()` nothing changes at all, its
+first call already sees the full root. And the layer says once per namespace and process, at
+warning level with the namespace and the config root, what the caller has to do. Once, not on
+every access: a warning inside a loop is one nobody reads.
+
+A root this layer has already written onto is still never re-read — neither the override written
+while applying nor the file value the store puts back by hand when it deletes a row. A fresh
+snapshot of such a root would record this layer's own write as the packaged default, which is
+exactly the data loss repaired in 1.13.0: pinned is bad, losing the entered value is worse.
+
+Which means an installation that has already lived with the fault does not repair itself in the
+process it is in. A namespace that both found an empty root and had a stored value to write was
+written to in the same breath, so it behaves exactly as before — only now it says so once in the
+log. Repair the addon and restart, and the root is filled before the capture. A namespace with
+nothing stored yet repairs itself in the same process.
+
 ## 1.13.0 — 2026-09-07
 
 **Anyone coming from 1.12.0 reads the first three sections.** In 1.12.0 part of the stored

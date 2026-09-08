@@ -719,3 +719,96 @@ it('stores a text as the string it is', function () {
 
     expect(config('widgets.withdrawal_text'))->toBe("Zeile eins\nZeile zwei");
 });
+
+/**
+ * Der Wachhund gegen ein Addon, das seine Config zu spaet zusammenfuehrt.
+ *
+ * Gemessen am 08.09.2026 an `statamic-lead-magnets` (`ad6bd81`) und
+ * `statamic-marketing`: beide hingen ihr `mergeConfigFrom` in `bootAddon()`,
+ * und Statamic ruft das aus einem eigenen, spaeteren `app->booted()`-Rueckruf
+ * als diese Schicht. Der Root war im Moment der Baseline leer, das `??=` hat
+ * diese Leere fuer den Prozess eingefroren, und danach entsprach kein
+ * gespeicherter Wert je seinem Paket-Default — keine Zeile in `brand_settings`
+ * wurde je geloescht, jede Einstellung war festgenagelt, ohne Fehler und ohne
+ * Meldung.
+ */
+it('does not freeze an empty config root as the baseline', function () {
+    Log::spy();
+
+    // `latecomer` bekommt hier absichtlich keine Config: das ist das Addon,
+    // dessen Merge noch aussteht.
+    expect(config('latecomer'))->toBeNull();
+
+    app(SettingsRegistry::class)->register(LateAddonSettings::class);
+    $this->settings->apply(force: true);
+
+    // Jetzt erst laeuft das `bootAddon()` des Addons und fuehrt die Paketwerte
+    // zusammen.
+    config()->set('latecomer', ['flag' => false, 'source' => true]);
+
+    // Nichts wurde festgenagelt, also kommt die Baseline jetzt zustande — und
+    // `packagedDefault()` kann wieder antworten. Vor dieser Wache blieb hier
+    // fuer immer `null` stehen.
+    expect($this->settings->packagedDefault('latecomer', 'flag'))->toBeFalse()
+        ->and($this->settings->packagedDefault('latecomer', 'source'))->toBeTrue();
+});
+
+it('warns exactly once about a config root that was empty when it applied', function () {
+    Log::spy();
+
+    app(SettingsRegistry::class)->register(LateAddonSettings::class);
+
+    // Zweimal anwenden, wie es ein Markenwechsel tut. Eine Warnung, die in
+    // einer Schleife steht, liest niemand.
+    $this->settings->apply(force: true);
+    $this->settings->apply(force: true);
+
+    Log::shouldHaveReceived('warning')
+        ->withArgs(fn (string $message, array $context = []) => str_contains($message, 'register()')
+            && ($context['namespace'] ?? null) === 'latecomer'
+            && ($context['config_root'] ?? null) === 'latecomer')
+        ->once();
+
+    // Und genau eine insgesamt: `widgets` steht rechtzeitig da und taucht
+    // deshalb gar nicht erst auf. Eine Wache, die auch den korrekten Fall
+    // meldet, ist in einer Woche Rauschen.
+    Log::shouldHaveReceived('warning')->once();
+});
+
+it('never takes an already applied override as the packaged default', function () {
+    // Der Preis einer offenen Baseline, und er muss bezahlt bleiben: war der
+    // Root beim ersten Anwenden leer, liegt beim naechsten Anwenden die eigene
+    // Ueberschreibung auf der Config. Sie dort als Paketvorgabe einzusammeln
+    // waere der `statamic-offers`-Fehler vom 07.09.2026 — der Betreiber
+    // speichert denselben Wert ein zweites Mal, die Zeile wird als
+    // "entspricht ohnehin dem Default" geloescht, und der Wert faellt still auf
+    // die Paketvorgabe zurueck. Festgenagelt ist schlimm, den Wert des
+    // Betreibers zu verlieren ist schlimmer.
+    Log::spy();
+
+    // Die Zeile liegt vor der Anmeldung in der Tabelle, wie auf jeder
+    // Installation, die die Einstellung schon einmal gesetzt hat. Anders herum
+    // holt die Anmeldung selbst ({@see SettingsRegistry::catchUp()}) einen
+    // leeren Stand ab und merkt ihn sich fuer den Rest des Tests.
+    BrandSetting::query()->create([
+        'brand_id' => app('brand-context')->currentId(),
+        'namespace' => 'latecomer',
+        'key' => 'flag',
+        'value' => true,
+    ]);
+
+    app(SettingsRegistry::class)->register(LateAddonSettings::class);
+
+    $this->settings->apply(force: true);
+
+    expect(config('latecomer.flag'))->toBeTrue();
+
+    // Das verspaetete `mergeConfigFrom` legt die Paketwerte unter das, was
+    // schon dasteht: die Ueberschreibung bleibt oben.
+    config()->set('latecomer.source', true);
+
+    $this->settings->apply(force: true);
+
+    expect($this->settings->packagedDefault('latecomer', 'flag'))->toBeNull()
+        ->and(config('latecomer.flag'))->toBeTrue();
+});
