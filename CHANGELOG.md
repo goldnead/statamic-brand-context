@@ -164,7 +164,7 @@ only ever name one brand.
   transition rule, which previously stood only on the removed page.
 - **The value is not stored on the user.** A Statamic user is not necessarily a database row —
   under the file driver it is `users/<id>.yaml` — and that is exactly why `brand_user` has no
-  foreign key. The field hangs on three points: `UserBlueprintFound` puts it into the form, a
+  foreign key. The field hangs on four points: `UserBlueprintFound` puts it into the form, a
   `User::computed()` callback reads it out of `brand_user`, `UserSaving` takes the submitted value
   back off the user and `UserSaved` writes it as rows. Both drivers are in the test: under the
   file driver a leak would be a line in the YAML, under the eloquent driver a column that does not
