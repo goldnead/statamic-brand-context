@@ -36,6 +36,29 @@ written to in the same breath, so it behaves exactly as before — only now it s
 log. Repair the addon and restart, and the root is filled before the capture. A namespace with
 nothing stored yet repairs itself in the same process.
 
+### Fixed: the test suite did not isolate its tests under MySQL
+
+Nothing an installation can see, and the reason the release is worth reading anyway: the suite
+that guards all of the above was not measuring what it claimed on the engine most installations
+run on.
+
+The package's own test case created a dummy table in `setUp()` and dropped it again in
+`tearDown()`. Under MySQL, DDL commits implicitly — so each of those two statements ended the
+transaction `RefreshDatabase` had just opened, and the rollback afterwards had nothing left to
+roll back. A single test that stored one settings row left that row in the database, and every
+test after it met it. On SQLite, which rolls DDL back like anything else, the same suite was
+green, which is exactly why this could sit there unseen. The table is now created once with the
+migrations and never dropped between tests, so no test issues DDL inside its own transaction.
+
+One test was reading the wrong signal on top of that: it simulated an installation whose
+migrations never ran by deleting the brands, but left the manager holding the default brand it
+had already resolved — `BrandManager` caches that for the process on purpose, and `forget()`
+clears only the *current* brand. Whether that cache was warm depended on the driver, so the same
+test was green on one and red on the other. It now starts from a manager that has resolved
+nothing, which is what the scenario actually is.
+
+The full suite is green under both drivers: 164 tests on SQLite, 145 on MySQL.
+
 ## 1.13.0 — 2026-09-07
 
 **Anyone coming from 1.12.0 reads the first three sections.** In 1.12.0 part of the stored

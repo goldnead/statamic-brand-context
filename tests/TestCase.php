@@ -12,12 +12,30 @@ abstract class TestCase extends Orchestra
 {
     use RefreshDatabase;
 
-    protected function setUp(): void
+    /**
+     * A dummy branded table + model to exercise the scope and the trait without
+     * pulling a real addon into the foundation package's own suite.
+     *
+     * **Created with the migrations, once per process, and never dropped
+     * between tests.** It used to be a `Schema::create()` in `setUp()` and a
+     * `Schema::dropIfExists()` in `tearDown()`, and under MySQL that quietly
+     * disabled the isolation the whole suite relies on: DDL commits
+     * implicitly, so each of those two statements ended the transaction
+     * `RefreshDatabase` had just opened, and the rollback afterwards had
+     * nothing left to roll back. Measured on 08.09.2026 — a single test that
+     * stores one settings row left that row in the database after the run, and
+     * every following test met it. The suite is green on SQLite either way,
+     * because SQLite rolls DDL back like anything else, which is precisely why
+     * this could sit here unseen.
+     *
+     * {@see MigrationPathTestCase} names the same rule for the same reason and
+     * gives its migrations a connection of their own. Here the rule is kept by
+     * not issuing DDL inside a test at all: this hook runs on
+     * `DatabaseRefreshed`, so before the first transaction is opened, and the
+     * table's rows are rolled back per test like every other table's.
+     */
+    protected function defineDatabaseMigrationsAfterDatabaseRefreshed(): void
     {
-        parent::setUp();
-
-        // A dummy branded table + model to exercise the scope/trait without
-        // pulling any real addon into the foundation package tests.
         Schema::create('widgets', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('brand_id')->nullable();
@@ -29,13 +47,6 @@ abstract class TestCase extends Orchestra
             $table->timestamps();
             $table->unique(['brand_id', 'email']);
         });
-    }
-
-    protected function tearDown(): void
-    {
-        Schema::dropIfExists('widgets');
-
-        parent::tearDown();
     }
 
     protected function getPackageProviders($app): array

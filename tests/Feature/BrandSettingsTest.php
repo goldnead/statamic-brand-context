@@ -423,7 +423,19 @@ it('still draws the screen on an install whose migrations never ran', function (
     // that on as a 500. Reading needs no brand at all.
     Schema::dropIfExists('brand_settings');
     Brand::query()->delete();
-    app('brand-context')->forget();
+
+    // Ein Prozess, der nie eine Marke aufloesen konnte — nicht einer, dem eine
+    // schon aufgeloeste unter den Fuessen weggeloescht wurde. Der Unterschied
+    // ist nicht kosmetisch: `BrandManager` merkt sich die Standardmarke
+    // absichtlich fuer den Prozess, und `forget()` raeumt nur die *aktuelle*
+    // Marke weg. Stand hier vorher `app('brand-context')->forget()`, hing der
+    // Test daran, ob beim Booten schon jemand `default()` gefragt hatte: unter
+    // der In-Memory-SQLite steht die Datenbank zu dem Zeitpunkt noch nicht,
+    // unter MySQL schon. Derselbe Test war deshalb auf dem einen Treiber gruen
+    // und auf dem anderen rot, und was er dort meldete, war nicht der Defekt,
+    // den er sucht.
+    app()->forgetInstance('brand-context');
+    app()->forgetInstance('brand-context.settings');
 
     $controller = app(BrandSettingsController::class);
 
