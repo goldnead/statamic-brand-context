@@ -31,7 +31,7 @@
  * comes back as the default with the stored override deleted. The form takes
  * the answer, so the screen and the installation cannot drift.
  */
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { Head, router, toggleArchitecturalBackground } from '@statamic/cms/inertia';
 import {
     Header, Button, Card, Panel, Alert, Field, Input, Textarea, Switch, Select, Badge,
@@ -295,9 +295,35 @@ function tabInSicht(namespace) {
     }
 }
 
-onMounted(() => tabInSicht(activeSection.value));
+const canScrollTabsLeft = ref(false);
+const canScrollTabsRight = ref(false);
+
+/**
+ * Liest die Scrollposition der Huelle aus — siehe die Fade-Divs im Template.
+ * Drei Feldzugriffe und zwei Vergleiche, billig genug fuer jedes `scroll`-
+ * Ereignis. 1px Toleranz faengt Rundungsfehler an der Kante ab, die sonst im
+ * Ruhezustand einen Fade flackern liessen.
+ */
+function updateTabFade() {
+    const el = tabBar.value;
+    if (! el) return;
+    canScrollTabsLeft.value = el.scrollLeft > 1;
+    canScrollTabsRight.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+}
+
+onMounted(() => {
+    tabInSicht(activeSection.value);
+    nextTick(updateTabFade);
+    window.addEventListener('resize', updateTabFade);
+});
+
+onBeforeUnmount(() => window.removeEventListener('resize', updateTabFade));
 
 watch(activeSection, (namespace) => nextTick(() => tabInSicht(namespace)));
+
+// Ein Brand-Wechsel oder eine andere Anzahl Abschnitte aendert, wie weit die
+// Leiste ueberhaupt laeuft.
+watch(() => props.sections, () => nextTick(updateTabFade));
 
 /**
  * An Inertia visit re-renders this page with new props — a brand switch, and
@@ -487,21 +513,55 @@ watch(showsEmptyState, (empty) => toggleArchitecturalBackground(empty), { immedi
                  einem Addon. Gleiche Huelle wie in `statamic-flow-canvas`
                  (61f7701), damit die Familie eine Antwort auf ein Problem hat
                  und nicht zwei. -->
-            <div
-                v-if="showsTabBar"
-                ref="tabBar"
-                class="-mx-1 overflow-x-auto px-1"
-                data-brand-settings-tabs-shell
-            >
-                <TabList class="flex-nowrap" data-brand-settings-tabs>
-                    <TabTrigger
-                        v-for="section in sections"
-                        :key="section.namespace"
-                        :name="section.namespace"
-                        :text="section.title"
-                        :data-brand-settings-tab="section.namespace"
-                    />
-                </TabList>
+            <div v-if="showsTabBar" class="brand-settings-tab-fade-wrap">
+                <div
+                    ref="tabBar"
+                    class="-mx-1 overflow-x-auto px-1"
+                    data-brand-settings-tabs-shell
+                    @scroll="updateTabFade"
+                >
+                    <TabList class="flex-nowrap" data-brand-settings-tabs>
+                        <TabTrigger
+                            v-for="section in sections"
+                            :key="section.namespace"
+                            :name="section.namespace"
+                            :text="section.title"
+                            :data-brand-settings-tab="section.namespace"
+                        />
+                    </TabList>
+                </div>
+
+                <!--
+                    Weiche Kante statt Dekoration: der Fade zeigt nur, wenn in diese
+                    Richtung wirklich noch Tabs liegen, und verschwindet, sobald das Ende
+                    erreicht ist — sonst waere er eine Kante, die am Ende der Liste luegt.
+                    Aria-hidden und `pointer-events: none`, damit er keinen Klick schluckt:
+                    der Tab darunter bleibt der Treffer, nicht das Overlay. Farbe kommt aus
+                    dem Statamic-Token `var(--theme-color-content-bg)` (derselbe Wert, den
+                    `bg-content-bg` aufloest), kein fester Hex-Wert, das traegt Hell und
+                    Dunkel gleichermassen. Plain CSS im <style>-Block unten statt
+                    Tailwind-Utility-Klassen: dieses Addon hat keinen eigenen Tailwind-Build
+                    (kein `@import "tailwindcss"`, kein Plugin in vite.config.js) und traegt
+                    nur, was Statamics eigenes CP-Bundle zufaellig schon mitbringt — eine neue
+                    Utility-Klasse wie `from-content-bg` waere lautlos leer geblieben. Baugleich
+                    mit der Gegenstelle in NodeLibrary.vue (statamic-flow-canvas) und
+                    Settings.vue (statamic-brand-context) — zweimal gebaut statt geteilt,
+                    weil brand-context nicht von flow-canvas abhaengt (siehe composer.json)
+                    und eine neue Abhaengigkeit fuer eine Fade-Kante zu teuer waere.
+                    Aenderung hier: die Gegenstelle im jeweils anderen Repo nachziehen.
+                -->
+                <div
+                    v-show="canScrollTabsLeft"
+                    aria-hidden="true"
+                    data-brand-settings-tabs-fade="left"
+                    class="brand-settings-tab-fade brand-settings-tab-fade--left"
+                />
+                <div
+                    v-show="canScrollTabsRight"
+                    aria-hidden="true"
+                    data-brand-settings-tabs-fade="right"
+                    class="brand-settings-tab-fade brand-settings-tab-fade--right"
+                />
             </div>
 
             <!-- Jeder Abschnitt in seiner eigenen Grenze: die Feldlisten kommen
@@ -657,3 +717,29 @@ watch(showsEmptyState, (empty) => toggleArchitecturalBackground(empty), { immedi
         </template>
     </div>
 </template>
+
+<style scoped>
+/* Plain CSS, not Tailwind utilities — see the template comment above the fade
+   divs for why. `var(--theme-color-content-bg)` is the same custom property
+   `bg-content-bg` resolves to, so this tracks the CP's light/dark theme (and
+   any custom accent) without a second definition of what that colour is. */
+.brand-settings-tab-fade-wrap {
+    position: relative;
+}
+.brand-settings-tab-fade {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1.5rem;
+    z-index: 1;
+    pointer-events: none;
+}
+.brand-settings-tab-fade--left {
+    left: 0;
+    background: linear-gradient(to right, var(--theme-color-content-bg), transparent);
+}
+.brand-settings-tab-fade--right {
+    right: 0;
+    background: linear-gradient(to left, var(--theme-color-content-bg), transparent);
+}
+</style>

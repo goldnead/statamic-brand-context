@@ -259,6 +259,79 @@ describe('Suite settings screen', () => {
         expect(gescrollt.at(-1)[0]).toBe('automations');
     });
 
+    /** Simuliert einen ueberlaufenden Scrollcontainer, den happy-dom von sich aus nicht misst. */
+    function stubOverflow(el, { scrollWidth, clientWidth, scrollLeft }) {
+        Object.defineProperty(el, 'scrollWidth', { value: scrollWidth, configurable: true });
+        Object.defineProperty(el, 'clientWidth', { value: clientWidth, configurable: true });
+        Object.defineProperty(el, 'scrollLeft', { value: scrollLeft, configurable: true, writable: true });
+    }
+
+    it('zeigt die Fade-Kante nur auf der Seite, auf der wirklich noch etwas liegt', async () => {
+        // Gemessen am 22.09.2026 im Playground: 22 Tabs, Huelle 1368px sichtbar,
+        // scrollWidth 2191px. happy-dom liefert scrollWidth/clientWidth immer als
+        // 0, deshalb wird hier nachgeholfen statt echt zu scrollen.
+        // `attachTo: document.body`, sonst beantwortet happy-doms `getComputedStyle`
+        // die Sichtbarkeitsfrage von `isVisible()` nicht zuverlaessig — an einem
+        // Element, das nie im Dokument haengt, kommt scheinbar sichtbar heraus,
+        // ganz gleich was `v-show` gesetzt hat.
+        const wrapper = mount(Settings, { attachTo: document.body, props: props({ sections: [section, other] }) });
+        const shell = wrapper.get('[data-brand-settings-tabs-shell]').element;
+        const left = () => wrapper.get('[data-brand-settings-tabs-fade="left"]');
+        const right = () => wrapper.get('[data-brand-settings-tabs-fade="right"]');
+
+        // Zustand 1: Anfang. Rechts geht es weiter, links ist nichts.
+        stubOverflow(shell, { scrollWidth: 2191, clientWidth: 1368, scrollLeft: 0 });
+        shell.dispatchEvent(new Event('scroll'));
+        await wrapper.vm.$nextTick();
+        expect(left().isVisible()).toBe(false);
+        expect(right().isVisible()).toBe(true);
+
+        // Zustand 2: mittendrin. Beide Kanten sichtbar.
+        stubOverflow(shell, { scrollWidth: 2191, clientWidth: 1368, scrollLeft: 400 });
+        shell.dispatchEvent(new Event('scroll'));
+        await wrapper.vm.$nextTick();
+        expect(left().isVisible()).toBe(true);
+        expect(right().isVisible()).toBe(true);
+
+        // Zustand 3: ganz rechts. Die rechte Kante luegt nicht mehr, sie ist weg.
+        stubOverflow(shell, { scrollWidth: 2191, clientWidth: 1368, scrollLeft: 2191 - 1368 });
+        shell.dispatchEvent(new Event('scroll'));
+        await wrapper.vm.$nextTick();
+        expect(left().isVisible()).toBe(true);
+        expect(right().isVisible()).toBe(false);
+    });
+
+    it('ist aria-hidden und traegt die Klasse, die im <style>-Block pointer-events: none bekommt', () => {
+        // `pointer-events-none` selbst pruefen wir nicht als Tailwind-Klasse:
+        // Vitest injiziert das <style scoped> dieser Komponente nicht ins DOM,
+        // also liefert getComputedStyle() hier nichts. Die tatsaechliche
+        // Klickbarkeit ist im Playground-Screenshot belegt (elementFromPoint).
+        const wrapper = mount(Settings, { props: props({ sections: [section, other] }) });
+
+        for (const side of ['left', 'right']) {
+            const fade = wrapper.get(`[data-brand-settings-tabs-fade="${side}"]`);
+            expect(fade.attributes('aria-hidden')).toBe('true');
+            expect(fade.classes()).toContain('brand-settings-tab-fade');
+            expect(fade.classes()).toContain(`brand-settings-tab-fade--${side}`);
+        }
+    });
+
+    it('faerbt die Kante aus dem Statamic-Token, nicht aus einem festen Hex-Wert', async () => {
+        // Quelltext-Pruefung statt Laufzeit-CSS: Vitest injiziert `<style
+        // scoped>` nicht ins Test-DOM (siehe Test oben), und dieser Fall ist
+        // billig genug, um ihn direkt am Quelltext zu sichern, statt ihn
+        // ungeprueft zu lassen.
+        const fs = await import('node:fs');
+        const path = await import('node:path');
+        const settingsPath = path.resolve(process.cwd(), 'resources/js/pages/Settings.vue');
+        const source = fs.readFileSync(settingsPath, 'utf8');
+        const style = source.slice(source.indexOf('<style scoped>'), source.lastIndexOf('</style>'));
+
+        expect(style).toContain('var(--theme-color-content-bg)');
+        expect(style).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+        expect(style).not.toMatch(/\brgb\(|\bhsl\(/);
+    });
+
     it('sagt den Namen des Addons nicht zweimal untereinander', async () => {
         // Steht er schon im offenen Tab, ist die Ueberschrift zwei Zeilen
         // tiefer dieselbe Beschriftung ein zweites Mal. Die Config-Zeile und

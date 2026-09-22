@@ -1,8 +1,11 @@
 {
   "resources/js/cp.js": {
-    "file": "assets/cp-Crk97_lB.js",
+    "file": "assets/cp-BNhwqWxU.js",
     "name": "cp",
     "src": "resources/js/cp.js",
-    "isEntry": true
+    "isEntry": true,
+    "css": [
+      "assets/cp-Cbs3YO6r.css"
+    ]
   }
 }

@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Added: eine weiche Kante an der Tableiste, damit Scrollen keine Vermutung bleibt
+
+Die Scroll-Huelle von weiter unten behob die Erreichbarkeit, nicht die Auffindbarkeit: der
+Scrollbalken ist ein unsichtbarer Overlay, bis man scrollt, und nichts sagte einer Person, die nie
+scrollt, dass da noch mehr Addons stehen. Zwei unabhaengige Pruefungen haben dieselbe Restluecke
+gemeldet.
+
+Am jeweiligen Rand der Huelle liegt jetzt ein weicher Farbverlauf, nur sichtbar auf der Seite, auf
+der wirklich noch etwas liegt, und weg, sobald das Ende erreicht ist — eine Kante, die nie
+verschwindet, wuerde luegen, dass die Liste weitergeht. `aria-hidden` und `pointer-events: none`,
+damit sie nie zum Treffer wird, den der Tab darunter haben sollte. Die Farbe ist
+`var(--theme-color-content-bg)` (derselbe Wert, den `bg-content-bg` aufloest), kein Hex-Wert, das
+traegt Hell und Dunkel gleichermassen mit.
+
+Als reines CSS in einem komponenten-gebundenen `<style>`-Block umgesetzt, nicht als
+Tailwind-Utility-Klassen: dieses Addon hat keinen eigenen Tailwind-Build (kein
+`@import "tailwindcss"`, kein Plugin in `vite.config.js`) und traegt nur, was Statamics eigenes
+CP-Bundle zufaellig schon mitbringt. Eine neue Utility-Klasse wie `from-content-bg` waere lautlos
+leer geblieben. Plain CSS im `<style>`-Block der SFC umgeht das: Vite kompiliert es unabhaengig
+davon, was ein Tailwind-Scanner sieht oder nicht.
+
+Dieselbe Kante, dieselbe Begruendung, baugleich (nicht geteilt) in `statamic-flow-canvas`s
+`NodeLibrary.vue` gebaut: dieses Addon haengt von jenem Paket nicht ab, um eine Komponente darueber
+zu teilen, und `NodeLibrary.vue` hat dasselbe Problem mit dem Tailwind-Scanning seiner
+konsumierenden Hosts (siehe dortiges CHANGELOG).
+
 ### Added: ein Tab je Addon, und in der Seitenleiste ein Eintrag, der ihn oeffnet
 
 Am 22.09.2026 gezaehlt: **22 Addons** melden Einstellungen an, zusammen rund **90 Feldgruppen**,
