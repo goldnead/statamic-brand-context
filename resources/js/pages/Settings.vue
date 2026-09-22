@@ -59,7 +59,20 @@ function toForm(section, values) {
             const value = values[field.key];
 
             if (field.type === 'list') {
-                form[field.key] = (value ?? []).join('\n');
+                // Eine Liste ist nicht immer eine Liste.
+                //
+                // Ein Addon darf einen Wert als `list` deklarieren, dessen
+                // Config auf einer Site eine Zuordnung traegt — dann kommt
+                // hier ein Objekt an, `join()` gibt es darauf nicht, und der
+                // Fehler nahm die GANZE Seite mit: alle Abschnitte aller
+                // Addons blieben weiss, sichtbar nur in der Browserkonsole.
+                // Dieselbe Falle wie beim `select` unten, gemessen am
+                // 22.09.2026 an `entitlements.manual.subject_types`.
+                //
+                // Die Schluessel, nicht die Werte: bei einer Zuordnung
+                // Typ => Beschriftung ist der Schluessel der Wert, den die
+                // Liste meint.
+                form[field.key] = (Array.isArray(value) ? value : Object.keys(value ?? {})).join('\n');
             } else if (field.type === 'boolean') {
                 form[field.key] = value ?? false;
             } else if (field.type === 'select') {

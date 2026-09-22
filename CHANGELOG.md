@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Fixed: die Einstellungsseite war auf jeder Site weiss, die das CP-Bundle nie veroeffentlicht hat
+
+Dieses Paket erweitert Illuminates `ServiceProvider`, nicht Statamics `AddonServiceProvider`.
+Damit greift keine Addon-Konvention, und `statamic:install` — der Composer-Hook, der auf jeder
+Site die CP-Assets aller Addons veroeffentlicht — hat `resources/dist/build` nie mitgenommen.
+`public/vendor/statamic-brand-context/` existierte auf `staging.adriangoldner.com` nie, die
+Vite-Anmeldung stieg wegen des fehlenden Manifests (richtig) aus, das Bundle wurde nie geladen,
+und `/cp/brand-settings` blieb weiss mit `Couldn't find Inertia component for the
+[brand-context::Settings] page` in der Browserkonsole. Der Provider haengt sich jetzt selbst in
+`Statamic::afterInstalled()` und veroeffentlicht `brand-context-cp`.
+
+### Fixed: ein einziger Wert in der falschen Form nahm die Seite aller Addons mit
+
+Ein Addon darf einen Wert als `list` deklarieren, dessen Config auf einer Site eine Zuordnung
+traegt (`entitlements.manual.subject_types` war `{"App\Models\User": "Mitglied"}`). Im Browser
+kam dort ein Objekt an, `join()` gibt es darauf nicht, der Fehler flog aus dem Setup der Seite,
+und alle Abschnitte aller Addons blieben leer. Dieselbe Falle wie bei `select` in 1.12.x. Eine
+Zuordnung wird jetzt ueber ihre Schluessel gelesen, die Seite steht.
+
 ## 1.13.1 — 2026-09-08
 
 ### Fixed: an addon that merges its config too late no longer pins every setting for good

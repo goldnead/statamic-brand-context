@@ -287,6 +287,22 @@ class ServiceProvider extends BaseServiceProvider
             __DIR__.'/../resources/dist/build' => public_path('vendor/statamic-brand-context/build'),
         ], 'brand-context-cp');
 
+        // Und veroeffentlichen, ohne dass jemand daran denkt.
+        //
+        // Dieses Paket erweitert Illuminates ServiceProvider, nicht Statamics
+        // AddonServiceProvider — also greift keine der Addon-Konventionen, und
+        // `statamic:install` (der Composer-Hook jeder Site) veroeffentlicht das
+        // CP-Bundle nicht mit. Ergebnis auf staging.adriangoldner.com:
+        // `public/vendor/statamic-brand-context/` existierte nie, die
+        // Vite-Anmeldung oben stieg wegen des fehlenden Manifests aus, das
+        // Bundle wurde nie geladen, und die Einstellungsseite blieb weiss mit
+        // „Couldn't find Inertia component for the [brand-context::Settings]
+        // page". Zwanzig andere Addons lagen daneben, weil sie die Konvention
+        // nutzen. Gemessen 22.09.2026.
+        Statamic::afterInstalled(function ($command): void {
+            $command->call('vendor:publish', ['--tag' => 'brand-context-cp', '--force' => true]);
+        });
+
         $this->publishes([
             __DIR__.'/../resources/lang' => $this->app->langPath('vendor/brand-context'),
         ], 'brand-context-translations');

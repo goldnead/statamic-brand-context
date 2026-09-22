@@ -155,6 +155,24 @@ describe('Suite settings screen', () => {
         expect(payload.settings.redact_keys).toEqual(['authorization', 'x-api-key']);
     });
 
+    it('survives a list value that is a map instead of a list', async () => {
+        // Gemessen 22.09.2026 auf staging.adriangoldner.com:
+        // `entitlements.manual.subject_types` ist als `list` deklariert, trug
+        // dort aber `{'App\\Models\\User': 'Mitglied'}`. `join()` gibt es auf
+        // einem Objekt nicht, der Fehler flog aus dem Setup der Seite — und
+        // damit blieben die Abschnitte ALLER Addons weiss.
+        const mapped = {
+            ...section,
+            values: { ...section.values, 'redact_keys': { authorization: 'Header', 'x-api-key': 'Schluessel' } },
+        };
+
+        const wrapper = mount(Settings, { props: props({ sections: [mapped] }) });
+
+        expect(wrapper.find('[data-stub="Header"]').exists()).toBe(true);
+        expect(wrapper.find('[data-settings-field="automations:redact_keys"] textarea').element.value)
+            .toBe('authorization\nx-api-key');
+    });
+
     it('shows a validation error on the field it belongs to', async () => {
         const wrapper = mount(Settings, { props: props() });
 
