@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, onTestFinished } from 'vitest';
 import { mount } from '@vue/test-utils';
 import Settings from '../../resources/js/pages/Settings.vue';
 import { router, toggleArchitecturalBackground } from './stubs/inertia.js';
@@ -211,6 +211,73 @@ describe('Suite settings screen', () => {
         await wrapper.setProps({ sections: [{ ...section }, { ...other }] });
 
         expect(wrapper.find('[data-brand-settings-section="leadhub"]').exists()).toBe(true);
+    });
+
+    it('puts the tab bar in a scrollable shell instead of letting it run off the page', () => {
+        // Gemessen am 22.09.2026 im laufenden Playground bei 1920px: 22 Tabs
+        // brauchen 2187px, die Spalte ist 1360px breit, der letzte Tab endete
+        // bei 2559 gegen ein Listenende bei 1732. Statamics TabList ist eine
+        // Flex-Reihe ohne overflow-x und ohne flex-wrap; rund ein Viertel der
+        // Addons war nicht anklickbar.
+        const wrapper = mount(Settings, { props: props({ sections: [section, other] }) });
+        const shell = wrapper.find('[data-brand-settings-tabs-shell]');
+
+        expect(shell.exists()).toBe(true);
+        expect(shell.classes()).toContain('overflow-x-auto');
+        expect(wrapper.find('[data-brand-settings-tabs]').classes()).toContain('flex-nowrap');
+    });
+
+    it('holt den offenen Tab in den sichtbaren Ausschnitt', async () => {
+        // Ohne das ist die Huelle schlimmer als der Ueberlauf: wer in der
+        // Seitenleiste auf das letzte Addon klickt, bekommt den richtigen
+        // Inhalt und eine Leiste, die ganz links steht — der aktive Tab liegt
+        // ausserhalb, und die Seite sieht aus, als haette sie den ersten Tab
+        // geoeffnet.
+        const gescrollt = [];
+        const original = Element.prototype.scrollIntoView;
+
+        Element.prototype.scrollIntoView = function (options) {
+            gescrollt.push([this.getAttribute('data-brand-settings-tab'), options]);
+        };
+
+        // `restoreMocks` nimmt nur Vitest-Spione zurueck, keine Zuweisung an
+        // ein Prototyp. Ohne das traegt jeder folgende Test die Attrappe mit.
+        onTestFinished(() => { Element.prototype.scrollIntoView = original; });
+
+        const wrapper = mount(Settings, {
+            attachTo: document.body,
+            props: props({ sections: [section, other], initialSection: 'leadhub' }),
+        });
+
+        expect(gescrollt.at(-1)[0]).toBe('leadhub');
+        // `block: 'nearest'`, sonst springt die Seite beim Tabwechsel vertikal.
+        expect(gescrollt.at(-1)[1]).toEqual({ block: 'nearest', inline: 'center' });
+
+        await openTab(wrapper, 'automations');
+        await wrapper.vm.$nextTick();
+
+        expect(gescrollt.at(-1)[0]).toBe('automations');
+    });
+
+    it('sagt den Namen des Addons nicht zweimal untereinander', async () => {
+        // Steht er schon im offenen Tab, ist die Ueberschrift zwei Zeilen
+        // tiefer dieselbe Beschriftung ein zweites Mal. Die Config-Zeile und
+        // der Speichern-Knopf bleiben, sie sind der Grund fuer die Reihe.
+        const wrapper = mount(Settings, { props: props({ sections: [section, other] }) });
+
+        expect(wrapper.find('[data-brand-settings-section="automations"] h2').exists()).toBe(false);
+        expect(wrapper.find('[data-brand-settings-section="automations"]').text())
+            .toContain('settings_follows_config');
+        expect(wrapper.find('[data-settings-save="automations"]').exists()).toBe(true);
+    });
+
+    it('behaelt die Ueberschrift, wenn es keine Tableiste gibt, die sie traegt', () => {
+        // Eine Installation mit einem einzigen Addon hat keine Leiste. Ohne
+        // die Ueberschrift stuende der Name des Addons nirgends auf der Seite.
+        const wrapper = mount(Settings, { props: props() });
+
+        expect(wrapper.find('[data-brand-settings-section="automations"] h2').text())
+            .toBe('Automations');
     });
 
     it('leaves out a tab bar of one', () => {

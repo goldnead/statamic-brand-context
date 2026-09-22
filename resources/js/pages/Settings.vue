@@ -31,7 +31,7 @@
  * comes back as the default with the stored override deleted. The form takes
  * the answer, so the screen and the installation cannot drift.
  */
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { Head, router, toggleArchitecturalBackground } from '@statamic/cms/inertia';
 import {
     Header, Button, Card, Panel, Alert, Field, Input, Textarea, Switch, Select, Badge,
@@ -265,6 +265,40 @@ function openable() {
 
 const activeSection = ref(openable());
 
+/** Die scrollbare Huelle um die Tableiste. */
+const tabBar = ref(null);
+
+/**
+ * Den offenen Tab in den sichtbaren Ausschnitt holen.
+ *
+ * Ohne das ist die Scroll-Huelle schlimmer als der Ueberlauf, den sie
+ * behebt: wer in der Seitenleiste auf "Webhook Manager" klickt, bekommt den
+ * richtigen Inhalt, aber eine Tableiste, die ganz links steht — der aktive
+ * Tab liegt ausserhalb, und die Seite sieht aus, als habe sie den ersten Tab
+ * geoeffnet. Gemessen: der letzte Tab beginnt bei 2491, sichtbar ist bis
+ * 1732.
+ *
+ * `block: 'nearest'`, damit das Holen die Seite nicht vertikal verschiebt —
+ * die Tableiste steht oben, und ein Sprung dorthin waere beim Tabwechsel ein
+ * Ruck ohne Anlass.
+ */
+function tabInSicht(namespace) {
+    const shell = tabBar.value;
+
+    if (! namespace || ! shell) return;
+
+    const trigger = [...shell.querySelectorAll('[data-brand-settings-tab]')]
+        .find((el) => el.getAttribute('data-brand-settings-tab') === namespace);
+
+    if (typeof trigger?.scrollIntoView === 'function') {
+        trigger.scrollIntoView({ block: 'nearest', inline: 'center' });
+    }
+}
+
+onMounted(() => tabInSicht(activeSection.value));
+
+watch(activeSection, (namespace) => nextTick(() => tabInSicht(namespace)));
+
 /**
  * An Inertia visit re-renders this page with new props — a brand switch, and
  * the redirect after every save. If the open tab is gone from the new props
@@ -428,15 +462,47 @@ watch(showsEmptyState, (empty) => toggleArchitecturalBackground(empty), { immedi
              nicht zu finden. Welcher Tab aufgeht, entscheidet der Server aus
              `?section=` — daran haengen die Seitenleisten-Eintraege je Addon. -->
         <Tabs v-model="activeSection">
-            <TabList v-if="showsTabBar" data-brand-settings-tabs>
-                <TabTrigger
-                    v-for="section in sections"
-                    :key="section.namespace"
-                    :name="section.namespace"
-                    :text="section.title"
-                    :data-brand-settings-tab="section.namespace"
-                />
-            </TabList>
+            <!-- Statamics `TabList` ist eine reine Flex-Reihe: kein
+                 `overflow-x`, kein `flex-wrap`. Gemessen am 22.09.2026 im
+                 laufenden Playground bei 1920px Fenster: 22 Tabs brauchen
+                 2187px, die Spalte ist 1360px breit, und der letzte Tab
+                 ("Webhook Manager") endete bei 2559 gegen ein Listenende bei
+                 1732. Rund ein Viertel der Addons war nicht anklickbar.
+
+                 **Gescrollt, nicht umgebrochen, und das ist gemessen.** Mit
+                 `flex-wrap: wrap` entstehen bei diesen Namen nicht zwei,
+                 sondern DREI Zeilen — und Statamics `TabsIndicator` ist
+                 absolut zur Liste positioniert: er folgt der Spalte des
+                 aktiven Tabs, nicht seiner Zeile. Im Bild stand der
+                 Unterstrich unter "Statamic ToC" in Zeile 3, waehrend
+                 "Activity" in Zeile 1 der aktive Tab war. Das zu reparieren
+                 hiesse, den Aktivzustand einer Core-Komponente selbst
+                 nachzubauen, und der naechste Statamic-Sprung haette ihn
+                 wieder.
+
+                 Der Einwand gegen Scrollen ist richtig — man sieht nicht,
+                 dass es mehr gibt. Hier faengt ihn die zweite Haelfte dieses
+                 Tickets auf: jedes Addon hat seinen eigenen Eintrag in der
+                 Seitenleiste, die Leiste ist also nicht der einzige Weg zu
+                 einem Addon. Gleiche Huelle wie in `statamic-flow-canvas`
+                 (61f7701), damit die Familie eine Antwort auf ein Problem hat
+                 und nicht zwei. -->
+            <div
+                v-if="showsTabBar"
+                ref="tabBar"
+                class="-mx-1 overflow-x-auto px-1"
+                data-brand-settings-tabs-shell
+            >
+                <TabList class="flex-nowrap" data-brand-settings-tabs>
+                    <TabTrigger
+                        v-for="section in sections"
+                        :key="section.namespace"
+                        :name="section.namespace"
+                        :text="section.title"
+                        :data-brand-settings-tab="section.namespace"
+                    />
+                </TabList>
+            </div>
 
             <!-- Jeder Abschnitt in seiner eigenen Grenze: die Feldlisten kommen
                  aus fremden Addons, und ein Render-Fehler in einem darf nicht
@@ -453,7 +519,19 @@ watch(showsEmptyState, (empty) => toggleArchitecturalBackground(empty), { immedi
             <section class="mt-6" :data-brand-settings-section="section.namespace">
                 <div class="mb-3 flex items-center justify-between gap-4">
                     <div>
-                        <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100">{{ section.title }}</h2>
+                        <!-- Nur ohne Tableiste. Steht der Addon-Name schon im
+                             offenen Tab direkt darueber, ist die Ueberschrift
+                             dieselbe Beschriftung ein zweites Mal, zwei Zeilen
+                             tiefer. Auf einer Installation mit einem einzigen
+                             Addon gibt es keine Leiste — dann stuende der Name
+                             des Addons sonst nirgends auf der Seite. Die
+                             Config-Zeile und der Speichern-Knopf bleiben in
+                             beiden Faellen, sie sind der Grund fuer diese
+                             Reihe. -->
+                        <h2
+                            v-if="! showsTabBar"
+                            class="text-lg font-medium text-gray-900 dark:text-gray-100"
+                        >{{ section.title }}</h2>
                         <p class="text-sm text-gray-500 dark:text-gray-400">
                             {{ t('settings_follows_config', { path: section.config_path }) }}
                         </p>

@@ -44,6 +44,32 @@ Ohne das landet, wer `payments` aus der Seitenleiste oeffnet, auf `invoices` wec
 speichert, wieder auf `payments` — und der Speichervorgang sieht aus, als waere er nicht
 passiert.
 
+**Die Tableiste scrollt, statt ueber den Rand zu laufen.** Statamics `TabList` ist eine reine
+Flex-Reihe ohne `overflow-x` und ohne `flex-wrap`. Im laufenden Playground bei 1920px gemessen:
+22 Tabs brauchen **2191px**, die Spalte ist **1368px** breit, und der letzte Tab
+(„Webhook Manager") endete bei 2559 gegen ein Listenende bei 1736 — rund ein Viertel der Addons
+war nicht anklickbar. Die Leiste sitzt jetzt in einer `-mx-1 px-1 overflow-x-auto`-Huelle,
+dieselbe wie in `statamic-flow-canvas` (61f7701).
+
+Gescrollt und nicht umgebrochen, und das ist gemessen: mit `flex-wrap: wrap` entstehen bei diesen
+Addon-Namen **drei** Zeilen, und Statamics `TabsIndicator` ist absolut zur Liste positioniert —
+er folgt der Spalte des aktiven Tabs, nicht seiner Zeile. Im Bild stand der Unterstrich unter
+„Statamic ToC" in Zeile 3, waehrend „Activity" in Zeile 1 aktiv war.
+
+Dazu gehoert, dass der offene Tab in den sichtbaren Ausschnitt geholt wird. Ohne das waere die
+Huelle schlimmer als der Ueberlauf: wer in der Seitenleiste auf das letzte Addon klickt, bekaeme
+den richtigen Inhalt unter einer Leiste, die ganz links steht. Belegt bei
+`?section=webhook-manager`: `scrollLeft` 823 von 823, aktiver Tab sichtbar, Indikator darunter.
+
+Volle Seitenbreite wurde geprueft und **verworfen**: die Spalte waechst bei 1920px auf hoechstens
+1622px, die Leiste braucht 2191px. Vollbreite haette den Ueberlauf nicht behoben, nur verkleinert
+— und haette jede Beschreibungszeile auf einer Seite verlaengert, die fast nur aus Fliesstext
+besteht.
+
+Und die Abschnittsueberschrift faellt weg, solange eine Tableiste da ist, die den Addon-Namen
+schon traegt. Die Config-Zeile und der Speichern-Knopf bleiben. Auf einer Installation mit einem
+einzigen Addon gibt es keine Leiste, dort bleibt die Ueberschrift.
+
 ### Fixed: die Einstellungsseite war auf jeder Site weiss, die das CP-Bundle nie veroeffentlicht hat
 
 Dieses Paket erweitert Illuminates `ServiceProvider`, nicht Statamics `AddonServiceProvider`.
