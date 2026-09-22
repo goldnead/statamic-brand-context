@@ -1,7 +1,19 @@
 <script setup>
 /**
- * The suite's settings screen — one page, one section per addon that
- * registered settings.
+ * The suite's settings screen — one page, one tab per addon that registered
+ * settings.
+ *
+ * **Why tabs and not one page.** Twenty-two addons register, together about
+ * ninety field groups, and until 22.09.2026 they stood underneath each other in
+ * one scrolling page. That is not a cosmetic complaint: at ninety groups a
+ * setting is not findable, and the screen's whole argument — one place to look
+ * instead of twenty-two — only holds if one place also means one thing at a
+ * time.
+ *
+ * Statamic's own `Tabs`/`TabList`/`TabTrigger`/`TabContent`, not `PublishTabs`:
+ * the latter carries the blueprint semantics of a publish form, and there is no
+ * blueprint here. `Tabs` is controlled through `modelValue`, which is what lets
+ * the open tab come from the URL.
  *
  * Every control is generated from `sections[].groups`, which the server built
  * from each addon's own `settingsGroups()`: the same definition the validation
@@ -19,11 +31,11 @@
  * comes back as the default with the stored override deleted. The form takes
  * the answer, so the screen and the installation cannot drift.
  */
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { Head, router, toggleArchitecturalBackground } from '@statamic/cms/inertia';
 import {
     Header, Button, Card, Panel, Alert, Field, Input, Textarea, Switch, Select, Badge,
-    EmptyStateMenu, EmptyStateItem, Icon,
+    EmptyStateMenu, EmptyStateItem, Icon, Tabs, TabList, TabTrigger, TabContent,
 } from '@statamic/cms/ui';
 import SectionBoundary from '../components/SectionBoundary.vue';
 
@@ -33,6 +45,10 @@ const props = defineProps({
     brand: { type: Object, default: null },
     multiBrand: { type: Boolean, default: false },
     sections: { type: Array, required: true },
+    // Which tab the page opens on, decided by the server from `?section=`.
+    // Null when nothing is registered. Already checked against what this user
+    // may manage, so it is never a namespace missing from `sections`.
+    initialSection: { type: String, default: null },
     // Addons, die sich nicht anmelden konnten. Die Registry ueberspringt sie,
     // damit ein einzelnes fehlerhaftes Addon nicht die ganze Installation
     // mitnimmt — und deshalb muss hier stehen, dass sie fehlen.
@@ -229,7 +245,94 @@ function save(section) {
     });
 }
 
+// ---------- Which tab is open ----------
+
+const tabNames = computed(() => props.sections.map((section) => section.namespace));
+
+/**
+ * The tab to open: the one the server was asked for, or the first.
+ *
+ * The server has already refused a namespace this user may not manage, so
+ * anything that survives to here is a tab that exists. The check is repeated
+ * anyway, because `Tabs` given a `modelValue` matching no `TabContent` shows an
+ * empty page under a full tab bar — a blank screen for a stale bookmark.
+ */
+function openable() {
+    return tabNames.value.includes(props.initialSection)
+        ? props.initialSection
+        : (tabNames.value[0] ?? null);
+}
+
+const activeSection = ref(openable());
+
+/**
+ * An Inertia visit re-renders this page with new props — a brand switch, and
+ * the redirect after every save. If the open tab is gone from the new props
+ * (fewer sections, another brand), fall back rather than leave the page blank.
+ */
+watch(() => props.sections, () => {
+    if (! tabNames.value.includes(activeSection.value)) {
+        activeSection.value = openable();
+    }
+});
+
+/**
+ * The second sidebar click.
+ *
+ * An operator already on this screen who clicks another addon's entry makes an
+ * Inertia visit to the same page component with a different `?section=`: new
+ * props, same instance, and nothing in the DOM changes on its own. Without
+ * this the entry would do exactly what `statamic-automations` removed its own
+ * settings child entry for — look like a link and go nowhere.
+ *
+ * Only on a change of the prop, so it never fights a tab the operator picked
+ * themselves: saving comes back with the section the address bar already
+ * carries, and a brand switch keeps it.
+ */
+watch(() => props.initialSection, (namespace) => {
+    if (namespace && tabNames.value.includes(namespace)) {
+        activeSection.value = namespace;
+    }
+});
+
+/**
+ * Keep `?section=` on the address bar in step with the open tab.
+ *
+ * Not decoration, and not an Inertia visit either — `history.replaceState`,
+ * which changes no page state and fires no request. Two things depend on it:
+ * a reload or a bookmark comes back to the tab that was open, and **saving
+ * stays where it was**. Saving redirects back to the referrer, so without this
+ * an operator who opened `payments` from the sidebar, switched to `invoices`
+ * and saved would be dropped back on `payments` with the save apparently
+ * undone.
+ *
+ * `history.state` is handed back untouched: Inertia keeps its serialised page
+ * in there, and replacing it with null breaks the back button.
+ */
+watch(activeSection, (namespace) => {
+    if (! namespace || typeof window === 'undefined' || ! window.history?.replaceState) return;
+
+    try {
+        const url = new URL(window.location.href);
+
+        if (url.searchParams.get('section') === namespace) return;
+
+        url.searchParams.set('section', namespace);
+        window.history.replaceState(window.history.state, '', url);
+    } catch {
+        // A URL the browser will not parse is not worth a broken settings
+        // screen. The tab is open either way; only the address bar lags.
+    }
+});
+
 const hasSections = computed(() => props.sections.length > 0);
+
+/**
+ * A tab bar of one is a label repeating the heading under it. The `Tabs`
+ * wrapper still stands, so the markup is the same shape however many addons
+ * are installed.
+ */
+const showsTabBar = computed(() => props.sections.length > 1);
 
 /**
  * Der Leerzustand gilt nur, wenn wirklich nichts da ist.
@@ -319,17 +422,35 @@ watch(showsEmptyState, (empty) => toggleArchitecturalBackground(empty), { immedi
             </ul>
         </Alert>
 
-        <div class="space-y-8">
+        <!-- Ein Tab je Addon. Bei zweiundzwanzig Addons und rund neunzig
+             Feldgruppen ist die eine lange Seite, die das hier bis zum
+             22.09.2026 war, kein Schoenheitsfehler: eine Einstellung ist darin
+             nicht zu finden. Welcher Tab aufgeht, entscheidet der Server aus
+             `?section=` — daran haengen die Seitenleisten-Eintraege je Addon. -->
+        <Tabs v-model="activeSection">
+            <TabList v-if="showsTabBar" data-brand-settings-tabs>
+                <TabTrigger
+                    v-for="section in sections"
+                    :key="section.namespace"
+                    :name="section.namespace"
+                    :text="section.title"
+                    :data-brand-settings-tab="section.namespace"
+                />
+            </TabList>
+
             <!-- Jeder Abschnitt in seiner eigenen Grenze: die Feldlisten kommen
                  aus fremden Addons, und ein Render-Fehler in einem darf nicht
                  die Seite aller nehmen. Siehe SectionBoundary. -->
-            <SectionBoundary
+            <TabContent
                 v-for="section in sections"
                 :key="section.namespace"
+                :name="section.namespace"
+            >
+            <SectionBoundary
                 :namespace="section.namespace"
                 :title="section.title"
             >
-            <section :data-brand-settings-section="section.namespace">
+            <section class="mt-6" :data-brand-settings-section="section.namespace">
                 <div class="mb-3 flex items-center justify-between gap-4">
                     <div>
                         <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100">{{ section.title }}</h2>
@@ -453,7 +574,8 @@ watch(showsEmptyState, (empty) => toggleArchitecturalBackground(empty), { immedi
                 </div>
             </section>
             </SectionBoundary>
-        </div>
+            </TabContent>
+        </Tabs>
         </template>
     </div>
 </template>

@@ -10,6 +10,7 @@ use Goldnead\BrandContext\Http\Middleware\SetBrandForSite;
 use Goldnead\BrandContext\Http\Middleware\SetBrandFromSession;
 use Goldnead\BrandContext\Queue\BrandOnQueue;
 use Goldnead\BrandContext\Sending\BrandSenderIdentity;
+use Goldnead\BrandContext\Settings\AddonTitle;
 use Goldnead\BrandContext\Settings\SettingsManager;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
 use Illuminate\Routing\Middleware\SubstituteBindings;
@@ -338,7 +339,8 @@ class ServiceProvider extends BaseServiceProvider
     }
 
     /**
-     * The suite's settings screen: one page, one section per registered addon.
+     * The suite's settings screen: one page, one tab per registered addon, and
+     * one sidebar entry per registered addon pointing at its own tab.
      *
      * Registered in both single- and multi-brand mode, unlike the membership
      * screen below. A single-brand install still has settings; what it does
@@ -366,11 +368,11 @@ class ServiceProvider extends BaseServiceProvider
                 return;
             }
 
-            // The item is built only when the operator can manage at least one
-            // section, because a nav entry leading to a page with nothing on
-            // it is a dead end. NavItem::can() takes a single permission and
-            // there are as many here as there are addons, so the check is done
-            // in the open rather than handed to it.
+            // An entry is built per addon the operator may actually manage,
+            // because a nav entry leading to a page with nothing on it is a
+            // dead end. NavItem::can() takes a single permission and there are
+            // as many here as there are addons, so the check is done in the
+            // open rather than handed to it.
             $user = User::current();
 
             // `can()` is on the Statamic user implementation, not on the
@@ -382,17 +384,31 @@ class ServiceProvider extends BaseServiceProvider
                 return;
             }
 
-            foreach (array_keys($registry->all()) as $namespace) {
+            // Built here rather than in each addon's own provider. The link an
+            // addon would register is the same link for all twenty-two, minus
+            // the namespace, and it is this package that knows which addons
+            // registered and which permission gates each one. Twenty-two
+            // copies of this block in twenty-two repositories would be
+            // twenty-two chances to drift from a screen that lives here.
+            //
+            // `sorted()`, so an operator finds the same order twice.
+            foreach (array_keys($registry->sorted()) as $namespace) {
                 $permission = $registry->permission($namespace);
 
-                if ($permission !== null && $user->can($permission)) {
-                    $nav->create(__('brand-context::messages.nav_settings'))
-                        ->section('Settings')
-                        ->route('brand-context.settings.index')
-                        ->icon('sliders-horizontal');
-
-                    return;
+                if ($permission === null || ! $user->can($permission)) {
+                    continue;
                 }
+
+                // Named after the addon, not "Addon Settings" twenty-two
+                // times. And `?section=`, which is the whole difference
+                // between this and the child entry `statamic-automations`
+                // removed in 2026 after a menu item that merely forwards
+                // somewhere was reported as a bug: this one opens the tab it
+                // promises. {@see BrandSettingsController::initialSection()}.
+                $nav->create(AddonTitle::for($namespace))
+                    ->section('Settings')
+                    ->route('brand-context.settings.index', ['section' => $namespace])
+                    ->icon($registry->icon($namespace));
             }
         });
     }

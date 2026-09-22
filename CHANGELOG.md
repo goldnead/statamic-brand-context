@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+### Added: ein Tab je Addon, und in der Seitenleiste ein Eintrag, der ihn oeffnet
+
+Am 22.09.2026 gezaehlt: **22 Addons** melden Einstellungen an, zusammen rund **90 Feldgruppen**,
+alle untereinander auf einer einzigen scrollenden Seite. Das ist kein Schoenheitsfehler. Bei
+neunzig Gruppen ist eine Einstellung nicht auffindbar, und das Versprechen der ganzen Schicht —
+ein Ort statt zweiundzwanzig — haelt nur, wenn ein Ort auch eine Sache auf einmal heisst.
+
+Die Seite ist jetzt eine Tableiste, ein Tab je Addon, aus Statamics eigenen `Tabs`, `TabList`,
+`TabTrigger` und `TabContent`. Nicht `PublishTabs`: das haengt an der Blueprint-Semantik eines
+Publish-Formulars, und die gibt es hier nicht.
+
+In der Seitenleiste steht statt des einen Sammeleintrags „Addon-Einstellungen" **ein Eintrag je
+Addon**, nach dem Addon benannt, auf `?section=<namensraum>` zeigend. Der Controller liest den
+Parameter und reicht ihn als Anfangswert durch; ein unbekannter Namensraum, einer ohne
+Berechtigung und ein fehlender Parameter fallen auf den ersten Tab zurueck, ohne Fehler.
+
+**Das ist die Haelfte, an der es haengt.** `statamic-automations` hatte seinen eigenen
+Settings-Kindeintrag entfernt, weil ein Menuepunkt, der nur weiterleitet, als Bug gemeldet wurde.
+Dieses Ticket dreht das um, und es ist nur dann kein Rueckfall, wenn der Eintrag mit geoeffnetem
+Tab landet statt oben auf der Sammelseite. Ohne die Vorwahl waere der Eintrag derselbe Bug von
+damals.
+
+**Kein einziges der 22 Addons muss angefasst werden.** Die beiden neuen Angaben — wo der Tab
+sitzt (`settingsOrder()`, Vorgabe 100) und welches Symbol der Seitenleisten-Eintrag traegt
+(`settingsIcon()`, Vorgabe `sliders-horizontal`) — stehen bewusst **nicht** in
+`ProvidesSettings`. Ein PHP-Interface kennt keine Vorgabewerte: dort deklariert waeren sie am Tag
+des Updates ein Fatal beim Booten auf allen zweiundzwanzig gewesen, im Control Panel, wegen einer
+Tab-Reihenfolge. Die Registry fragt mit `method_exists()` und faellt zurueck. Wer die Signaturen
+vom Compiler geprueft haben will, deklariert zusaetzlich `DescribesSettingsScreen`; noetig ist es
+nicht. Und wer an der optionalen Haelfte scheitert, verliert seinen Abschnitt nicht — anders als
+bei einer kaputten Feldliste, ohne die der Abschnitt nicht bedienbar waere.
+
+Die Reihenfolge ist `settingsOrder()` und bei Gleichstand der Namensraum, also alphabetisch.
+Vorher war es die Reihenfolge, in der die Provider zufaellig gebootet haben: auf zwei
+Installationen dieselben Addons und zwei verschiedene Leisten, und beim Suchen half keine von
+beiden.
+
+Nebenbei: die Adresszeile folgt dem offenen Tab (`history.replaceState`, kein Inertia-Besuch).
+Ohne das landet, wer `payments` aus der Seitenleiste oeffnet, auf `invoices` wechselt und
+speichert, wieder auf `payments` — und der Speichervorgang sieht aus, als waere er nicht
+passiert.
+
 ### Fixed: die Einstellungsseite war auf jeder Site weiss, die das CP-Bundle nie veroeffentlicht hat
 
 Dieses Paket erweitert Illuminates `ServiceProvider`, nicht Statamics `AddonServiceProvider`.

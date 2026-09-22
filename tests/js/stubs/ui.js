@@ -1,4 +1,4 @@
-import { h } from 'vue';
+import { computed, h, inject, provide } from 'vue';
 
 /**
  * Stand-ins for the `@statamic/cms/ui` components. They are deliberately dumb:
@@ -190,6 +190,71 @@ export const Switch = {
             ...attrs,
             onClick: () => emit('update:modelValue', ! props.modelValue),
         });
+    },
+};
+
+/**
+ * The tab set, as controlled as the real one.
+ *
+ * Dumber than Statamic's in every way but the two this package depends on:
+ * `modelValue` decides which content is mounted, and a trigger asks for a new
+ * one by emitting `update:modelValue`. A stub that rendered every `TabContent`
+ * would let the settings page pass while showing all twenty-two sections at
+ * once, which is the exact state these tabs exist to end.
+ */
+const TABS = Symbol('tabs');
+
+export const Tabs = {
+    name: 'Tabs',
+    props: {
+        modelValue: { type: String, default: null },
+        unmountOnHide: { type: Boolean, default: true },
+    },
+    emits: ['update:modelValue'],
+    setup(props, { slots, attrs, emit }) {
+        provide(TABS, {
+            active: computed(() => props.modelValue),
+            select: (name) => emit('update:modelValue', name),
+        });
+
+        return () =>
+            h('div', { 'data-stub': 'Tabs', 'data-active-tab': props.modelValue, ...attrs }, slots.default?.());
+    },
+};
+
+export const TabList = container('div', 'TabList');
+
+export const TabTrigger = {
+    name: 'TabTrigger',
+    props: ['name', 'text'],
+    setup(props, { slots, attrs }) {
+        const tabs = inject(TABS, null);
+
+        return () =>
+            h(
+                'button',
+                {
+                    'data-stub': 'TabTrigger',
+                    'data-tab': props.name,
+                    'data-active': tabs?.active.value === props.name ? 'true' : 'false',
+                    ...attrs,
+                    onClick: () => tabs?.select(props.name),
+                },
+                [props.text, slots.default?.()]
+            );
+    },
+};
+
+export const TabContent = {
+    name: 'TabContent',
+    props: ['name'],
+    setup(props, { slots, attrs }) {
+        const tabs = inject(TABS, null);
+
+        return () =>
+            tabs && tabs.active.value !== props.name
+                ? null
+                : h('div', { 'data-stub': 'TabContent', 'data-tab': props.name, ...attrs }, slots.default?.());
     },
 };
 

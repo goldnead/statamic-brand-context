@@ -4,17 +4,24 @@ use Goldnead\BrandContext\Http\Controllers\Cp\BrandSettingsController;
 use Goldnead\BrandContext\Http\Requests\UpdateBrandSettingsRequest;
 use Goldnead\BrandContext\Models\Brand;
 use Goldnead\BrandContext\Models\BrandSetting;
+use Goldnead\BrandContext\ServiceProvider;
 use Goldnead\BrandContext\Settings\SettingsManager;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
 use Goldnead\BrandContext\Tests\Fixtures\BrokenAddonSettings;
 use Goldnead\BrandContext\Tests\Fixtures\FakeAddonSettings;
 use Goldnead\BrandContext\Tests\Fixtures\FakeUser;
 use Goldnead\BrandContext\Tests\Fixtures\LateAddonSettings;
+use Goldnead\BrandContext\Tests\Fixtures\OrderedAddonSettings;
+use Goldnead\BrandContext\Tests\TestCase;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
+use Statamic\CP\Navigation\NavItem;
+use Statamic\Facades\CP\Nav;
+use Statamic\Facades\User as StatamicUser;
 
 /**
  * The settings layer.
@@ -823,4 +830,272 @@ it('never takes an already applied override as the packaged default', function (
 
     expect($this->settings->packagedDefault('latecomer', 'flag'))->toBeNull()
         ->and(config('latecomer.flag'))->toBeTrue();
+});
+
+/**
+ * Die Tabs, ihre Reihenfolge und der Sprung aus der Seitenleiste.
+ *
+ * Seit dem 22.09.2026 ist die Seite eine Tableiste statt einer Bahn von rund
+ * neunzig Feldgruppen, und in der Seitenleiste steht ein Eintrag je Addon, der
+ * auf `?section=<namensraum>` zeigt. Was hier geprueft wird, ist die Haelfte,
+ * die im Browser nicht zu sehen ist: welcher Tab aufgeht, wenn die Seite
+ * ankommt, und was passiert, wenn die URL etwas verlangt, das es nicht gibt
+ * oder das der Angemeldete nicht darf.
+ */
+function settingsScreen(array $query = [], array $permissions = ['manage widget settings']): array
+{
+    $request = Request::create('/cp/brand-settings', 'GET', $query, server: ['HTTP_X_INERTIA' => 'true']);
+    $request->setUserResolver(fn () => new FakeUser('admin', 'admin@example.com', null, $permissions));
+
+    return app(BrandSettingsController::class)->index($request)->toResponse($request)->getData(true)['props'];
+}
+
+it('opens the tab the URL names', function () {
+    // `statamic-automations` hat seinen Settings-Kindeintrag 2026 entfernt,
+    // weil ein Menuepunkt, der nur weiterleitet, als Bug gemeldet wurde. Ein
+    // Eintrag je Addon ist nur dann nicht derselbe Bug, wenn er den Tab
+    // mitbringt, den er verspricht.
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(OrderedAddonSettings::class);
+
+    $props = settingsScreen(
+        ['section' => 'zeppelin'],
+        ['manage widget settings', 'manage zeppelin settings'],
+    );
+
+    expect($props['initialSection'])->toBe('zeppelin');
+});
+
+it('falls back to the first tab instead of erroring on a section nobody registered', function () {
+    // Ein Lesezeichen auf ein deinstalliertes Addon, ein Tippfehler, eine alte
+    // Mail. Eine Einstellungsseite, die dafuer 404 antwortet, ist schlimmer
+    // als eine, die auf dem falschen Tab aufgeht.
+    expect(settingsScreen(['section' => 'gibt-es-nicht'])['initialSection'])->toBe('widgets');
+
+    // Und ohne jeden Parameter, was der Aufruf aus dem Lesezeichen von frueher
+    // ist.
+    expect(settingsScreen()['initialSection'])->toBe('widgets');
+});
+
+it('refuses to open a tab the user may not manage', function () {
+    // Sonst waere `?section=` eine URL, die entscheidet, was ein Bildschirm
+    // zeigt, unabhaengig davon, was der Angemeldete sehen darf. Der Abschnitt
+    // ist ohnehin nicht da — der Anfangswert darf ihn also auch nicht nennen,
+    // sonst steht die Seite leer unter einer Leiste ohne den genannten Tab.
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(OrderedAddonSettings::class);
+
+    $props = settingsScreen(['section' => 'zeppelin'], ['manage widget settings']);
+
+    expect(Arr::pluck($props['sections'], 'namespace'))->toBe(['widgets'])
+        ->and($props['initialSection'])->toBe('widgets');
+});
+
+it('leaves a user with no permission at all without tabs rather than with empty ones', function () {
+    $props = settingsScreen([], ['manage something else settings']);
+
+    expect($props['sections'])->toBe([])
+        ->and($props['initialSection'])->toBeNull();
+});
+
+it('survives a section parameter that is not a string', function () {
+    // `?section[]=widgets`. `in_array` auf einem Array waere kein Fehler,
+    // sondern ein stiller Nichttreffer — geprueft wird es trotzdem, weil der
+    // Wert aus der Adresszeile kommt und dort alles stehen kann.
+    expect(settingsScreen(['section' => ['widgets']])['initialSection'])->toBe('widgets');
+});
+
+it('puts the tabs in the order the addons asked for, not the order they booted', function () {
+    // `widgets` meldet sich zuerst an und sagt nichts, `zeppelin` danach und
+    // bittet um Platz 10. Ohne bewusste Reihenfolge waere die Leiste die
+    // Bootreihenfolge: auf zwei Installationen dieselben Addons, zwei
+    // verschiedene Leisten.
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(OrderedAddonSettings::class);
+
+    $props = settingsScreen([], ['manage widget settings', 'manage zeppelin settings']);
+
+    expect(Arr::pluck($props['sections'], 'namespace'))->toBe(['zeppelin', 'widgets'])
+        ->and($props['initialSection'])->toBe('zeppelin');
+});
+
+it('breaks a tie alphabetically, because twenty-two addons all say the same thing', function () {
+    // Keines der zweiundzwanzig Addons nennt heute eine Reihenfolge. Ohne
+    // Tiebreak waere die ganze Leiste Bootreihenfolge, und die Vorgabe waere
+    // eine Zahl ohne Wirkung.
+    config()->set('latecomer', ['flag' => true, 'source' => true]);
+    app(SettingsRegistry::class)->register(LateAddonSettings::class);
+
+    $props = settingsScreen([], ['manage widget settings', 'manage latecomer settings']);
+
+    expect(Arr::pluck($props['sections'], 'namespace'))->toBe(['latecomer', 'widgets']);
+});
+
+it('takes an addon that declares neither an order nor an icon', function () {
+    // Die harte Vorgabe des Tickets: zweiundzwanzig Addons erfuellen
+    // `ProvidesSettings` und kennen die beiden neuen Methoden nicht. Keines
+    // von ihnen darf angefasst werden muessen — und ein Interface mit
+    // Pflichtmethoden waere am Tag des Updates ein Fatal beim Booten auf allen
+    // zweiundzwanzig gewesen.
+    $registry = app(SettingsRegistry::class);
+
+    expect(method_exists(FakeAddonSettings::class, 'settingsOrder'))->toBeFalse()
+        ->and(method_exists(FakeAddonSettings::class, 'settingsIcon'))->toBeFalse()
+        ->and($registry->order('widgets'))->toBe(SettingsRegistry::DEFAULT_ORDER)
+        ->and($registry->icon('widgets'))->toBe(SettingsRegistry::DEFAULT_ICON)
+        // Und die Seite steht, mit allem, was sie vorher hatte.
+        ->and($registry->failures())->toBe([])
+        ->and(Arr::pluck(settingsScreen()['sections'], 'namespace'))->toBe(['widgets']);
+});
+
+it('reads an order and an icon from an addon that does declare them', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+
+    $registry = app(SettingsRegistry::class);
+    $registry->register(OrderedAddonSettings::class);
+
+    expect($registry->order('zeppelin'))->toBe(10)
+        ->and($registry->icon('zeppelin'))->toBe('lightning-bolt');
+});
+
+it('keeps the section when an addon falls over on the optional half', function () {
+    // Die Gegenrichtung zu `settingsGroups()`: ohne Feldliste ist ein
+    // Abschnitt nicht bedienbar und faellt zu Recht weg. Eine Reihenfolge ist
+    // Ausstattung — wer daran scheitert, bekommt den Vorgabewert und behaelt
+    // seinen Abschnitt. Ihn wegen einer Zahl zu verlieren waere die haertere
+    // Strafe fuer den kleineren Fehler.
+    Log::spy();
+
+    config()->set('wackelig', ['label' => 'packaged']);
+
+    $wackelig = new class extends OrderedAddonSettings
+    {
+        public static function settingsNamespace(): string
+        {
+            return 'wackelig';
+        }
+
+        public static function settingsConfigPath(): string
+        {
+            return 'wackelig';
+        }
+
+        public static function settingsPermission(): string
+        {
+            return 'manage wackelig settings';
+        }
+
+        public static function settingsOrder(): int
+        {
+            throw new RuntimeException('Class "Goldnead\Wackelig\Reihenfolge" not found');
+        }
+    };
+
+    $registry = app(SettingsRegistry::class);
+    $registry->register($wackelig::class);
+
+    expect($registry->order('wackelig'))->toBe(SettingsRegistry::DEFAULT_ORDER)
+        ->and($registry->has('wackelig'))->toBeTrue();
+
+    $props = settingsScreen([], ['manage widget settings', 'manage wackelig settings']);
+
+    // Der Abschnitt steht, der Ausfall steht daneben. Ein Fehler, der
+    // schweigt, waere hier so wenig eine Loesung wie beim Anmelden.
+    expect(Arr::pluck($props['sections'], 'namespace'))->toBe(['wackelig', 'widgets'])
+        ->and($props['failures'][0]['addon'])->toBe('wackelig')
+        ->and($props['failures'][0]['reason'])->toContain('settingsOrder()');
+});
+
+/**
+ * Die Eintraege in der Seitenleiste.
+ *
+ * Gebaut in {@see ServiceProvider::registerSettingsScreen()},
+ * einer je angemeldetem Addon, und zwar hier statt in den zweiundzwanzig
+ * fremden ServiceProvidern: der Link ist fuer alle derselbe bis auf den
+ * Namensraum, und wer sich angemeldet hat, weiss nur dieses Paket.
+ *
+ * Geprueft wird der echte Rueckruf, nicht eine Nachbildung davon. Statamic
+ * bootet in dieser Testumgebung nicht ({@see TestCase}),
+ * deshalb laeuft `Nav::build()` nicht — aber die Erweiterungen, die dieses
+ * Paket angemeldet hat, liegen auf der Nav-Instanz und lassen sich einzeln
+ * aufrufen. Was fehlt, ist alles, was Statamic selbst dazutut.
+ *
+ * @return array<int, NavItem>
+ */
+function settingsNavItems(FakeUser $user): array
+{
+    // `cp_route()` braucht beides, und ohne Statamics Boot steht keins davon.
+    config()->set('statamic.cp.enabled', true);
+    config()->set('statamic.cp.route', 'cp');
+
+    // `NavItem::url()` fragt unterwegs Statamics Dateisystem-Manager, und der
+    // kennt die Platte `standard` nur, weil Statamics eigener
+    // FilesystemServiceProvider sie anlegt. Der laeuft hier nicht.
+    config()->set('filesystems.disks.standard', ['driver' => 'local', 'root' => base_path()]);
+
+    Route::get('/cp/brand-settings', fn () => '')
+        ->name('statamic.cp.brand-context.settings.index');
+
+    StatamicUser::swap(new class($user)
+    {
+        public function __construct(protected FakeUser $user) {}
+
+        public function current(): FakeUser
+        {
+            return $this->user;
+        }
+    });
+
+    $nav = Nav::getFacadeRoot();
+
+    $extensions = (new ReflectionProperty($nav, 'extensions'))->getValue($nav);
+
+    foreach ($extensions as $extension) {
+        $extension($nav);
+    }
+
+    return $nav->items();
+}
+
+it('puts one sidebar entry per addon, each pointing at its own tab', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(OrderedAddonSettings::class);
+
+    $items = settingsNavItems(new FakeUser('admin', 'admin@example.com', null, [
+        'manage widget settings',
+        'manage zeppelin settings',
+    ]));
+
+    // Nach dem Addon benannt, nicht zweiundzwanzigmal "Addon-Einstellungen",
+    // und in derselben Reihenfolge wie die Tabs.
+    expect(array_map(fn ($item) => $item->display(), $items))->toBe(['Zeppelin', 'Widgets']);
+
+    // Der Punkt des ganzen Tickets. `statamic-automations` hat seinen alten
+    // Settings-Kindeintrag entfernt, weil ein Menuepunkt, der nur weiterleitet,
+    // als Bug gemeldet wurde. Ohne `?section=` waere dieser hier derselbe Bug.
+    expect($items[0]->url())->toContain('section=zeppelin')
+        ->and($items[1]->url())->toContain('section=widgets');
+
+    // Das Symbol kommt vom Addon, wenn es eines nennt, und sonst von der
+    // Vorgabe — derselbe Glyph, den der eine Sammeleintrag vorher trug.
+    expect($items[0]->icon())->toBe('lightning-bolt')
+        ->and($items[1]->icon())->toBe(SettingsRegistry::DEFAULT_ICON)
+        ->and($items[0]->section())->toBe('Settings');
+});
+
+it('leaves out the sidebar entry of an addon the user may not manage', function () {
+    // Ein Menuepunkt auf einen Tab, den es fuer diesen Benutzer nicht gibt,
+    // fuehrt auf eine Seite, auf der nichts von dem steht, was er verspricht.
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(OrderedAddonSettings::class);
+
+    $items = settingsNavItems(new FakeUser('halb', 'halb@example.com', null, ['manage widget settings']));
+
+    expect(array_map(fn ($item) => $item->display(), $items))->toBe(['Widgets']);
+});
+
+it('leaves the sidebar alone when the user may manage nothing', function () {
+    $items = settingsNavItems(new FakeUser('niemand', 'niemand@example.com', null, []));
+
+    expect($items)->toBe([]);
 });

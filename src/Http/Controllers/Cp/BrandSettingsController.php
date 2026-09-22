@@ -5,6 +5,7 @@ namespace Goldnead\BrandContext\Http\Controllers\Cp;
 use Goldnead\BrandContext\BrandManager;
 use Goldnead\BrandContext\Http\Requests\UpdateBrandSettingsRequest;
 use Goldnead\BrandContext\Models\Brand;
+use Goldnead\BrandContext\Settings\AddonTitle;
 use Goldnead\BrandContext\Settings\SettingsManager;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
 use Illuminate\Http\RedirectResponse;
@@ -13,7 +14,6 @@ use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
-use Statamic\Facades\Addon;
 
 /**
  * The one settings screen for the whole suite.
@@ -45,7 +45,9 @@ class BrandSettingsController extends BaseController
     {
         $sections = [];
 
-        foreach (array_keys($this->registry->all()) as $namespace) {
+        // `sorted()`, not `all()`: `all()` is boot order, and a tab bar in boot
+        // order is a different bar on every install.
+        foreach (array_keys($this->registry->sorted()) as $namespace) {
             if (! $this->canManage($request, $namespace)) {
                 continue;
             }
@@ -85,6 +87,11 @@ class BrandSettingsController extends BaseController
             // would point at a brand the page could not show.
             'multiBrand' => $brand !== null && $this->brands->multiBrandEnabled(),
             'sections' => $sections,
+            // Welcher Tab beim Oeffnen aufgeht. Ohne das waere der
+            // Seitenleisten-Eintrag je Addon genau der Fehler, den
+            // `statamic-automations` 2026 schon einmal gemeldet bekommen hat:
+            // ein Menuepunkt, der nur weiterleitet und dann irgendwo landet.
+            'initialSection' => $this->initialSection($request, $sections),
             // Wer sich nicht anmelden konnte. Die Registry laesst eine
             // fehlerhafte Anmeldung durchrutschen, damit ein einzelnes Addon
             // nicht die ganze Installation mitnimmt — und genau deshalb muss
@@ -139,7 +146,6 @@ class BrandSettingsController extends BaseController
         ]));
     }
 
-    /**
     /**
      * The current brand, or null on an install whose migrations never ran.
      *
@@ -199,38 +205,51 @@ class BrandSettingsController extends BaseController
     }
 
     /**
+     * Which tab is open when the page arrives.
+     *
+     * The sidebar carries one entry per addon, each pointing at
+     * `?section=<namespace>`, and this is the half that makes those entries
+     * worth having. `statamic-automations` removed its own settings child
+     * entry in 2026 because a menu item that merely forwards somewhere was
+     * reported as a bug; it is only not that bug again if the page opens on
+     * the addon the operator clicked.
+     *
+     * **Chosen from the sections that survived the permission filter**, not
+     * from the registry. A namespace the user may not manage has no tab to
+     * open, and honouring it would be a URL that decides what a screen shows
+     * regardless of what the user is allowed to see.
+     *
+     * Anything unusable — a namespace nobody registered, one the user may not
+     * manage, a missing parameter, `?section[]=x` arriving as an array — falls
+     * back to the first tab rather than erroring. A settings screen that
+     * answers 404 for a stale bookmark is worse than one that opens on the
+     * wrong tab.
+     *
+     * @param  array<int, array<string, mixed>>  $sections
+     */
+    protected function initialSection(Request $request, array $sections): ?string
+    {
+        $wanted = $request->query('section');
+        $available = array_column($sections, 'namespace');
+
+        if (is_string($wanted) && in_array($wanted, $available, true)) {
+            return $wanted;
+        }
+
+        return $available[0] ?? null;
+    }
+
+    /**
      * The heading for one section: the addon's own name, as Statamic knows it.
      *
-     * Asked of the addon registry rather than kept as a list here — a second
-     * name for an addon is a name that goes stale the first time one is
-     * renamed. Deriving it from the namespace instead is what the first
-     * version did, and it put "Leadhub" above a section every other screen in
-     * the Control Panel calls "LeadHub".
-     *
-     * Matched on the slug first and on the package name second, because the
-     * two do not always agree: `goldnead/statamic-leadhub` has the slug
-     * `leadhub`, but `goldnead/statamic-automations` has `statamic-automations`.
-     * A namespace that matches neither falls back to itself made readable,
-     * which is still better than an exception on a settings screen.
+     * {@see AddonTitle} for how it is found and why it is not derived from the
+     * namespace. It moved out of this controller when the sidebar grew an
+     * entry per addon — that is built in the service provider, and two copies
+     * of the lookup would sooner or later put two names on one addon.
      */
     protected function title(string $namespace): string
     {
-        try {
-            $addon = Addon::all()->first(
-                fn ($a) => $a->slug() === $namespace
-                    || str_ends_with($a->package(), '/statamic-'.$namespace)
-            );
-
-            if ($addon !== null && $addon->name() !== null && $addon->name() !== '') {
-                return $addon->name();
-            }
-        } catch (\Throwable) {
-            // No addon registry available (a plain Laravel context, or a boot
-            // that has not reached Statamic). Falling through is correct: a
-            // heading is not worth a broken page.
-        }
-
-        return ucwords(str_replace(['-', '_'], ' ', $namespace));
+        return AddonTitle::for($namespace);
     }
 
     protected function canManage(Request $request, string $namespace): bool

@@ -24,6 +24,25 @@ use Throwable;
  */
 class SettingsRegistry
 {
+    /**
+     * Where a tab sits when its addon says nothing, which is all of them.
+     *
+     * A hundred rather than zero so an addon that wants to be near the front
+     * has room to ask for it without every other addon having to be renumbered
+     * — and room below a hundred is worth more than room above it, because
+     * what an operator reaches for first is what wants moving up.
+     */
+    public const DEFAULT_ORDER = 100;
+
+    /**
+     * The sidebar icon when an addon names none.
+     *
+     * The same glyph the single collective "Addon Settings" entry carried
+     * before this became one entry per addon, so an install that updates sees
+     * the row it knows, just more than once.
+     */
+    public const DEFAULT_ICON = 'sliders-horizontal';
+
     /** @var array<string, class-string<ProvidesSettings>> */
     protected array $providers = [];
 
@@ -242,6 +261,58 @@ class SettingsRegistry
     }
 
     /**
+     * Eine Frage stellen, die der Anbieter auch unbeantwortet lassen darf.
+     *
+     * Der Weg, auf dem {@see settingsOrder()} und {@see settingsIcon()} ohne
+     * Vertragsbruch dazukommen: zweiundzwanzig Addons erfuellen
+     * {@see ProvidesSettings} bereits, und ein PHP-Interface kennt keine
+     * Vorgabewerte. Als Interface-Methode deklariert waere jede der beiden am
+     * Tag des Updates ein Fatal beim Booten gewesen — auf allen
+     * zweiundzwanzig, im Control Panel, wegen einer Tab-Reihenfolge.
+     *
+     * **Ein Ausfall hier kostet nicht den Abschnitt.** {@see ask()} ruft
+     * {@see fail()}, und das ist dort richtig: ohne Feldliste oder
+     * Config-Wurzel ist ein Abschnitt nicht bedienbar. Eine Reihenfolge und
+     * ein Symbol sind Ausstattung. Wer daran scheitert, verliert seine
+     * Sonderbehandlung und bekommt den Vorgabewert; der Abschnitt bleibt, und
+     * der Fehler steht trotzdem auf der Seite ({@see note()}).
+     *
+     * Der Methodenname kommt als Zeichenkette herein, nicht als Literal am
+     * Aufrufort — sonst muesste der Aufruf auf einer Klasse stehen, von der
+     * die statische Analyse zu Recht sagt, dass sie die Methode nicht kennt.
+     *
+     * @param  non-empty-string  $method
+     */
+    protected function askOptional(string $namespace, string $method, mixed $fallback): mixed
+    {
+        $provider = $this->provider($namespace);
+
+        if ($provider === null || ! method_exists($provider, $method)) {
+            return $fallback;
+        }
+
+        try {
+            /** @var callable(): mixed $aufruf */
+            $aufruf = [$provider, $method];
+
+            return $aufruf();
+        } catch (Throwable $e) {
+            $this->note(
+                $namespace.'|'.$method,
+                $namespace,
+                sprintf(
+                    '[%s()] hat geworfen (%s). Der Abschnitt bleibt, er nimmt nur den Vorgabewert.',
+                    $method,
+                    $e->getMessage() !== '' ? $e->getMessage() : $e::class,
+                ),
+                $e,
+            );
+
+            return $fallback;
+        }
+    }
+
+    /**
      * Was sich nicht anmelden konnte, fuer die Anzeige auf der
      * Einstellungsseite.
      *
@@ -256,6 +327,70 @@ class SettingsRegistry
     public function all(): array
     {
         return $this->providers;
+    }
+
+    /**
+     * Dasselbe, aber in der Reihenfolge, in der die Tabs und die
+     * Seitenleisten-Eintraege stehen sollen.
+     *
+     * **Nicht {@see all()} selbst sortiert.** Das ist die Anmeldereihenfolge
+     * und gehoert es zu bleiben: {@see SettingsManager::apply()} laeuft
+     * darueber, und in welcher Reihenfolge Werte auf die Config gelegt werden,
+     * ist eine Boot-Frage und keine Anzeigefrage. Wer hier sortiert, sortiert
+     * die Anzeige.
+     *
+     * Erst {@see order()}, dann der Namensraum. Der Gleichstand wird
+     * alphabetisch gebrochen und nicht in Anmeldereihenfolge gelassen, weil
+     * zweiundzwanzig Addons alle dieselbe Vorgabe tragen: ohne Tiebreak waere
+     * die Tableiste die Reihenfolge, in der die Provider zufaellig gebootet
+     * haben — auf zwei Installationen dieselben Addons, zwei verschiedene
+     * Leisten, und beim Suchen hilft keine von beiden. Der Namensraum ist
+     * nahe genug am Addon-Namen, dass alphabetisch nach ihm auch alphabetisch
+     * aussieht.
+     *
+     * @return array<string, class-string<ProvidesSettings>>
+     */
+    public function sorted(): array
+    {
+        $providers = $this->providers;
+
+        uksort($providers, function (string $a, string $b): int {
+            return [$this->order($a), $a] <=> [$this->order($b), $b];
+        });
+
+        return $providers;
+    }
+
+    /**
+     * Wo der Tab eines Addons sitzt. Klein zuerst.
+     *
+     * Optional beantwortet ({@see askOptional()}); ohne Antwort
+     * {@see DEFAULT_ORDER}. Eine Antwort, die keine ganze Zahl ist, wird
+     * ebenfalls zur Vorgabe: `<=>` auf gemischten Typen sortiert zwar
+     * irgendwie, aber nicht nachvollziehbar, und eine Tableiste, deren
+     * Reihenfolge niemand erklaeren kann, ist schlimmer als eine
+     * alphabetische.
+     */
+    public function order(string $namespace): int
+    {
+        $order = $this->askOptional($namespace, 'settingsOrder', static::DEFAULT_ORDER);
+
+        return is_int($order) ? $order : static::DEFAULT_ORDER;
+    }
+
+    /**
+     * Das Symbol fuer den Seitenleisten-Eintrag eines Addons.
+     *
+     * Optional beantwortet; ohne Antwort {@see DEFAULT_ICON}. Eine leere
+     * Zeichenkette zaehlt als keine Antwort — ein Eintrag ohne Symbol steht in
+     * der Statamic-Seitenleiste als Luecke neben lauter Zeilen, die eines
+     * haben.
+     */
+    public function icon(string $namespace): string
+    {
+        $icon = $this->askOptional($namespace, 'settingsIcon', static::DEFAULT_ICON);
+
+        return is_string($icon) && $icon !== '' ? $icon : static::DEFAULT_ICON;
     }
 
     public function has(string $namespace): bool

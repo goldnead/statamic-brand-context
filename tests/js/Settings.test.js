@@ -29,6 +29,8 @@ const section = {
     },
 };
 
+const other = { ...section, namespace: 'leadhub', title: 'LeadHub', config_path: 'leadhub' };
+
 function props(overrides = {}) {
     return {
         brand,
@@ -39,6 +41,10 @@ function props(overrides = {}) {
         ...overrides,
     };
 }
+
+/** Click a tab the way an operator does, rather than reaching into the state. */
+const openTab = (wrapper, namespace) =>
+    wrapper.find(`[data-brand-settings-tab="${namespace}"]`).trigger('click');
 
 beforeEach(() => {
     router.patch.mockClear();
@@ -116,6 +122,118 @@ describe('Suite settings screen', () => {
         expect(wrapper.find('[data-brand-settings-section="automations"]').exists()).toBe(true);
         expect(wrapper.findAll('[data-settings-field^="automations:"]')).toHaveLength(4);
         expect(wrapper.find('[data-brand-settings-empty]').exists()).toBe(false);
+    });
+
+    it('shows one addon at a time instead of all of them under each other', async () => {
+        // Der Grund fuer das ganze Ticket: zweiundzwanzig Addons, rund neunzig
+        // Feldgruppen, bis zum 22.09.2026 alle untereinander auf einer Seite.
+        const wrapper = mount(Settings, { props: props({ sections: [section, other] }) });
+
+        expect(wrapper.findAll('[data-brand-settings-tab]')).toHaveLength(2);
+        expect(wrapper.find('[data-brand-settings-section="automations"]').exists()).toBe(true);
+        expect(wrapper.find('[data-brand-settings-section="leadhub"]').exists()).toBe(false);
+
+        await openTab(wrapper, 'leadhub');
+
+        expect(wrapper.find('[data-brand-settings-section="automations"]').exists()).toBe(false);
+        expect(wrapper.find('[data-brand-settings-section="leadhub"]').exists()).toBe(true);
+    });
+
+    it('opens the tab the server was asked for, not the first one', () => {
+        // Das ist die Haelfte, an der der Seitenleisten-Eintrag je Addon
+        // haengt. `statamic-automations` hat seinen alten Settings-Kindeintrag
+        // 2026 entfernt, weil ein Menuepunkt, der nur weiterleitet, als Bug
+        // gemeldet wurde. Ohne das hier ist der Eintrag genau dieser Bug.
+        const wrapper = mount(Settings, {
+            props: props({ sections: [section, other], initialSection: 'leadhub' }),
+        });
+
+        expect(wrapper.find('[data-brand-settings-section="leadhub"]').exists()).toBe(true);
+        expect(wrapper.find('[data-brand-settings-tab="leadhub"]').attributes('data-active')).toBe('true');
+    });
+
+    it('falls back to the first tab instead of showing nothing under a full tab bar', () => {
+        // Ein veralteter Lesezeichen-Link, ein Addon, das deinstalliert wurde,
+        // ein von Hand getippter Namensraum. Der Server faengt das ab, und die
+        // Seite faengt es ein zweites Mal: `Tabs` mit einem `modelValue`, zu
+        // dem es keinen `TabContent` gibt, zeigt eine leere Seite unter einer
+        // vollen Tableiste — ein weisser Bildschirm fuer einen Tippfehler.
+        const wrapper = mount(Settings, {
+            props: props({ sections: [section, other], initialSection: 'gibt-es-nicht' }),
+        });
+
+        expect(wrapper.find('[data-brand-settings-section="automations"]').exists()).toBe(true);
+    });
+
+    it('keeps the address bar on the open tab, so a save comes back to it', async () => {
+        // Speichern leitet auf den Referrer zurueck. Ohne das hier landet wer
+        // `payments` aus der Seitenleiste oeffnet, auf `invoices` wechselt und
+        // speichert, wieder auf `payments` — und der Speichervorgang sieht aus,
+        // als waere er nicht passiert.
+        // Wie Inertia den Eintrag hinterlaesst, auf dem die Seite steht.
+        window.history.replaceState({ inertia: 'die serialisierte Seite' }, '', '/cp/brand-settings');
+
+        const wrapper = mount(Settings, { props: props({ sections: [section, other] }) });
+
+        await openTab(wrapper, 'leadhub');
+
+        expect(new URL(window.location.href).searchParams.get('section')).toBe('leadhub');
+        // Inertia haelt seine serialisierte Seite in `history.state`. Wird die
+        // beim Ersetzen weggeworfen, ist der Zurueck-Knopf kaputt.
+        expect(window.history.state).toEqual({ inertia: 'die serialisierte Seite' });
+    });
+
+    it('follows a second click in the sidebar', async () => {
+        // Wer schon auf der Seite steht und in der Seitenleiste ein anderes
+        // Addon anklickt, macht einen Inertia-Besuch auf dieselbe Komponente
+        // mit einem anderen `?section=`: neue Props, dieselbe Instanz, und von
+        // allein aendert sich im DOM nichts. Genau das waere der Menuepunkt,
+        // der aussieht wie ein Link und nirgendwohin fuehrt.
+        const wrapper = mount(Settings, {
+            props: props({ sections: [section, other], initialSection: 'automations' }),
+        });
+
+        await wrapper.setProps({ initialSection: 'leadhub' });
+
+        expect(wrapper.find('[data-brand-settings-section="leadhub"]').exists()).toBe(true);
+    });
+
+    it('does not drag an operator off the tab they picked themselves', async () => {
+        // Speichern leitet zurueck und rendert neu. Der Anfangswert aendert
+        // sich dabei nicht — und wenn er sich nicht aendert, darf er auch
+        // nichts umstellen, sonst spraenge die Seite nach jedem Speichern auf
+        // den Tab aus der Seitenleiste zurueck.
+        const wrapper = mount(Settings, {
+            props: props({ sections: [section, other], initialSection: 'automations' }),
+        });
+
+        await openTab(wrapper, 'leadhub');
+        await wrapper.setProps({ sections: [{ ...section }, { ...other }] });
+
+        expect(wrapper.find('[data-brand-settings-section="leadhub"]').exists()).toBe(true);
+    });
+
+    it('leaves out a tab bar of one', () => {
+        // Ein einzelner Tab ist eine Beschriftung ueber der Ueberschrift, die
+        // sie wiederholt. Auf einer Installation mit einem Addon ist das die
+        // ganze Leiste.
+        const wrapper = mount(Settings, { props: props() });
+
+        expect(wrapper.find('[data-brand-settings-tabs]').exists()).toBe(false);
+        expect(wrapper.find('[data-brand-settings-section="automations"]').exists()).toBe(true);
+    });
+
+    it('has no tab for an addon the server left out', () => {
+        // Die Rechtepruefung sitzt im Controller, und was sie aussortiert,
+        // kommt hier gar nicht erst an. Der Punkt des Tests ist, dass die
+        // Tableiste aus `sections` gebaut wird und nicht aus einer zweiten,
+        // ungefilterten Liste — sonst haette jede Installation eine Leiste mit
+        // Tabs, die ins Leere fuehren.
+        const wrapper = mount(Settings, { props: props({ sections: [other] }) });
+
+        expect(wrapper.find('[data-brand-settings-tab="automations"]').exists()).toBe(false);
+        expect(wrapper.find('[data-brand-settings-section="automations"]').exists()).toBe(false);
+        expect(wrapper.find('[data-brand-settings-section="leadhub"]').exists()).toBe(true);
     });
 
     it('names the brand only when there is more than one', () => {
@@ -200,19 +318,28 @@ describe('Suite settings screen', () => {
     });
 
     it('does not wipe unsaved edits in a section that was not the one saved', async () => {
-        const other = { ...section, namespace: 'leadhub', title: 'LeadHub', config_path: 'leadhub' };
         const wrapper = mount(Settings, { props: props({ sections: [section, other] }) });
 
-        // Two sections open, edits in both, only one saved. The save reloads
-        // the whole page, and the reload used to refill every form.
+        // Edits in two addons, only one saved. The save reloads the whole page,
+        // and the reload used to refill every form. Since the sections became
+        // tabs the second edit is out of sight while the first is saved, which
+        // makes losing it worse rather than better: nothing on screen would
+        // have shown it going.
         await wrapper.find('[data-settings-field="automations:label"] input').setValue('automations edit');
+
+        await openTab(wrapper, 'leadhub');
         await wrapper.find('[data-settings-field="leadhub:label"] input').setValue('leadhub edit');
+
+        await openTab(wrapper, 'automations');
         await wrapper.find('[data-settings-save="automations"]').trigger('click');
 
         await wrapper.setProps({ sections: [{ ...section }, { ...other }] });
 
         expect(wrapper.find('[data-settings-field="automations:label"] input').element.value)
             .toBe('packaged');
+
+        await openTab(wrapper, 'leadhub');
+
         expect(wrapper.find('[data-settings-field="leadhub:label"] input').element.value)
             .toBe('leadhub edit');
     });

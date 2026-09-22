@@ -2,6 +2,8 @@
 
 namespace Goldnead\BrandContext\Contracts;
 
+use Goldnead\BrandContext\Settings\SettingsRegistry;
+
 /**
  * What an addon writes to get a settings screen. Everything else — the table,
  * the form, the validation, the routes, the permission, the brand dimension —
@@ -32,6 +34,26 @@ namespace Goldnead\BrandContext\Contracts;
  *   a control that breaks the site.
  * - **Detected state.** Whether a sibling addon is installed is Composer's
  *   answer, not an operator's. Show it, do not offer it.
+ *
+ * **Two optional methods, deliberately not declared here.** Since the screen
+ * became a tab bar (22.09.2026) an addon may also say where its tab sits and
+ * which icon its sidebar entry carries:
+ *
+ * ```php
+ * public static function settingsOrder(): int;    // default 100, low sorts first
+ * public static function settingsIcon(): string;  // default `sliders-horizontal`
+ * ```
+ *
+ * They are written as a docblock rather than as interface methods, and that is
+ * the whole point: a PHP interface has no defaults, so declaring either of them
+ * here would break all twenty-two addons that already implement this contract
+ * on the day this package updates — a fatal at boot, in the Control Panel, for
+ * a tab order. {@see SettingsRegistry::order()}
+ * asks for them with `method_exists()` and falls back, so an addon adds one,
+ * both or neither and nothing else has to change. An addon that wants the
+ * compiler's help can declare
+ * {@see DescribesSettingsScreen} alongside
+ * this one; nothing requires it to.
  */
 interface ProvidesSettings
 {
@@ -41,7 +63,9 @@ interface ProvidesSettings
      * Stable forever: it is stored in `brand_settings.namespace` on every row,
      * so renaming it orphans every override the site has made. It is also the
      * segment the permission and the screen's section heading are derived
-     * from.
+     * from. Since the screen became a tab bar it is also the tab's handle and
+     * the `?section=` value the sidebar links to — one more reason it never
+     * changes.
      */
     public static function settingsNamespace(): string;
 
