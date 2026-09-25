@@ -10,7 +10,6 @@ use Goldnead\BrandContext\Http\Middleware\SetBrandForSite;
 use Goldnead\BrandContext\Http\Middleware\SetBrandFromSession;
 use Goldnead\BrandContext\Queue\BrandOnQueue;
 use Goldnead\BrandContext\Sending\BrandSenderIdentity;
-use Goldnead\BrandContext\Settings\AddonTitle;
 use Goldnead\BrandContext\Settings\SettingsManager;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
 use Illuminate\Routing\Middleware\SubstituteBindings;
@@ -405,7 +404,7 @@ class ServiceProvider extends BaseServiceProvider
                 // removed in 2026 after a menu item that merely forwards
                 // somewhere was reported as a bug: this one opens the tab it
                 // promises. {@see BrandSettingsController::initialSection()}.
-                $nav->create(AddonTitle::for($namespace))
+                $nav->create($registry->title($namespace))
                     ->section('Settings')
                     ->route('brand-context.settings.index', ['section' => $namespace])
                     ->icon($registry->icon($namespace));

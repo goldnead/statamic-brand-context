@@ -35,13 +35,14 @@ use Goldnead\BrandContext\Settings\SettingsRegistry;
  * - **Detected state.** Whether a sibling addon is installed is Composer's
  *   answer, not an operator's. Show it, do not offer it.
  *
- * **Two optional methods, deliberately not declared here.** Since the screen
+ * **Optional methods, deliberately not declared here.** Since the screen
  * became a tab bar (22.09.2026) an addon may also say where its tab sits and
  * which icon its sidebar entry carries:
  *
  * ```php
  * public static function settingsOrder(): int;    // default 100, low sorts first
  * public static function settingsIcon(): string;  // default `sliders-horizontal`
+ * public static function settingsTitle(): string; // default the addon's name (since 1.15)
  * ```
  *
  * They are written as a docblock rather than as interface methods, and that is

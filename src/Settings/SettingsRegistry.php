@@ -393,6 +393,21 @@ class SettingsRegistry
         return is_string($icon) && $icon !== '' ? $icon : static::DEFAULT_ICON;
     }
 
+    /**
+     * The name of an addon's sidebar entry and tab.
+     *
+     * Optional (`settingsTitle()`); without an answer the addon's own name
+     * ({@see AddonTitle}). Until 25.09.2026 the name was the only way, and an
+     * addon that wanted "Postfach-Einstellungen" there translated its own name
+     * globally, which renamed it in Statamic's addon list as well.
+     */
+    public function title(string $namespace): string
+    {
+        $title = $this->askOptional($namespace, 'settingsTitle', null);
+
+        return is_string($title) && $title !== '' ? $title : AddonTitle::for($namespace);
+    }
+
     public function has(string $namespace): bool
     {
         return isset($this->providers[$namespace]);

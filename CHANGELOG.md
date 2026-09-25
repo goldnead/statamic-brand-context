@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Optional `settingsTitle()` on a settings provider names its sidebar entry and tab. Without it the addon's name is used, as before. Until now the name was the only way, so an addon that wanted "Postfach-Einstellungen" there translated its own name globally, which renamed it in Statamic's addon list too.
+
 ## 1.14.0 — 2026-09-22
 
 ### Added: eine weiche Kante an der Tableiste, damit Scrollen keine Vermutung bleibt

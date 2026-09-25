@@ -249,7 +249,7 @@ class BrandSettingsController extends BaseController
      */
     protected function title(string $namespace): string
     {
-        return AddonTitle::for($namespace);
+        return $this->registry->title($namespace);
     }
 
     protected function canManage(Request $request, string $namespace): bool

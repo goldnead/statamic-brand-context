@@ -1099,3 +1099,35 @@ it('leaves the sidebar alone when the user may manage nothing', function () {
 
     expect($items)->toBe([]);
 });
+
+it('names the entry and the tab by settingsTitle() when an addon declares one', function () {
+    // Bis 25.09.2026 war der Addon-Name der einzige Weg, den Eintrag zu
+    // benennen. statamic-inbox uebersetzte deshalb "Inbox" global mit
+    // "Postfach-Einstellungen", und in der Addon-Liste von Statamic hiess das
+    // Addon dann so. Ein eigener Titel trennt beides.
+    config()->set('zeppelin', ['label' => 'packaged']);
+
+    $titled = new class extends OrderedAddonSettings
+    {
+        public static function settingsTitle(): string
+        {
+            return 'Luftschiff-Einstellungen';
+        }
+    };
+
+    $registry = app(SettingsRegistry::class);
+    $registry->register($titled::class);
+
+    // Before the sidebar: settingsNavItems() replaces the route list.
+    $tabs = Arr::pluck(settingsScreen([], ['manage widget settings', 'manage zeppelin settings'])['sections'], 'title');
+
+    $items = settingsNavItems(new FakeUser('admin', 'admin@example.com', null, [
+        'manage widget settings',
+        'manage zeppelin settings',
+    ]));
+
+    expect($registry->title('zeppelin'))->toBe('Luftschiff-Einstellungen')
+        ->and($registry->title('widgets'))->toBe('Widgets')
+        ->and(array_map(fn ($item) => $item->display(), $items))->toBe(['Luftschiff-Einstellungen', 'Widgets'])
+        ->and($tabs)->toBe(['Luftschiff-Einstellungen', 'Widgets']);
+});
