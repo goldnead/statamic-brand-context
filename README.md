@@ -308,6 +308,34 @@ namespace and bind their own default, so a host can answer the question for
 marketing post alone without touching transactional post. Rebinding the contract
 above changes it for everything that has not been rebound individually.
 
+## Addon settings (one screen for every addon)
+
+An addon that wants its values editable in the Control Panel implements
+`Goldnead\BrandContext\Contracts\ProvidesSettings` and registers the class with
+`SettingsRegistry::register()`. The screen, form, validation, storage (per brand, overrides only)
+and the `config()` values at runtime come from here; the addon declares the field list and nothing
+else. Required methods: `settingsNamespace()`, `settingsConfigPath()`, `settingsPermission()`,
+`settingsGroups()`.
+
+Three optional methods, read with `method_exists()` so an addon written against an older version
+keeps working unchanged:
+
+| Method | Default | What it sets |
+|---|---|---|
+| `settingsTitle(): string` | the addon's name from its package | the sidebar entry and the tab (since 1.15) |
+| `settingsOrder(): int` | `100`, low sorts first | the tab's position |
+| `settingsIcon(): string` | `sliders-horizontal` | the sidebar icon |
+
+`settingsTitle()` is for a host that registers settings of its own: without it the title is derived
+from the namespace, and an app namespace like `choirlive-mail` shows up as "Choirlive Mail".
+
+```php
+public static function settingsTitle(): string
+{
+    return __('app.settings.mail_title'); // "Postfach"
+}
+```
+
 ## Testing
 
 ```bash

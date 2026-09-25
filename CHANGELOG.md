@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.15.1 — 2026-09-25
+
+### Docs
+
+- README: the settings layer and its optional methods (`settingsTitle()`, `settingsOrder()`,
+  `settingsIcon()`) with their defaults. No code change.
+
 ## 1.15.0 — 2026-09-25
 
 ### Added
