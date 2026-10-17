@@ -91,6 +91,8 @@ class NavPlacement
             $this->warmed = true;
 
             try {
+                // The facade docblock declares build() without arguments; the method takes $preferences.
+                // @phpstan-ignore arguments.count
                 Nav::build(false);
             } catch (Throwable) {
                 // Der Rueckweg gilt.

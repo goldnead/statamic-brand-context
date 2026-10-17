@@ -526,6 +526,8 @@ class ServiceProvider extends BaseServiceProvider
             try {
                 $existing = $existing();
             } catch (\Throwable) {
+                // The docblock says array|null, the method takes a Closure too (it is what Nav::extend() hands out).
+                // @phpstan-ignore argument.type
                 $parent->children(function () use ($existing, $child) {
                     $items = $existing();
                     $items = $items instanceof Collection ? $items->all() : (array) $items;
