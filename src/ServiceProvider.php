@@ -364,17 +364,52 @@ class ServiceProvider extends BaseServiceProvider
 
         $this->app->scoped(NavPlacement::class);
 
-        // Erst nach dem Booten angemeldet, und das ist die Reihenfolge, auf die
-        // es ankommt: Statamic ruft die `Nav::extend()`-Rueckrufe in der
-        // Reihenfolge ihrer Anmeldung auf. Meldete dieses Paket seinen im
-        // eigenen `boot()` an, kaeme es vor oder nach den Addons, je nachdem,
-        // wie Composer die Provider ordnet, und ein Eltern-Eintrag, der noch
-        // nicht existiert, waere nicht zu finden. Aus `booted()` heraus haben
-        // alle Provider ihr `boot()` hinter sich, und damit stehen ihre
-        // Rueckrufe vor diesem.
+        // Als Letztes angemeldet, und das ist die Reihenfolge, auf die es
+        // ankommt: Statamic ruft die `Nav::extend()`-Rueckrufe in der
+        // Reihenfolge ihrer Anmeldung auf, und ein Eltern-Eintrag, der noch
+        // nicht existiert, ist nicht zu finden. Die Addons melden ihre Nav aus
+        // `bootAddon()` an, und das laeuft in einem `Statamic::booted()`-Rueckruf,
+        // den Statamics eigener Provider erst nach dem Booten abarbeitet.
+        // Gemessen im Playground (Oktober 2026): ein `Nav::extend()` aus
+        // `app->booted()` stand an Stelle 0 von 30, vor allen Addons, und fand
+        // keinen einzigen Eltern-Eintrag.
+        //
+        // Deshalb wird aus `app->booted()` heraus noch einmal in die Warteschlange
+        // von `Statamic::booted()` eingereiht: hinter alle Addons, die sich dort
+        // schon gemeldet haben.
         $this->app->booted(function () {
-            Nav::extend(fn ($nav) => $this->extendNavWithSettings($nav));
+            $extend = fn () => Nav::extend(fn ($nav) => $this->extendNavWithSettings($nav));
+
+            if ($this->statamicBootedCallbacksPending()) {
+                Statamic::booted($extend);
+
+                return;
+            }
+
+            // Statamics Warteschlange ist schon abgearbeitet (oder es gibt sie
+            // nicht): die Addons haben sich gemeldet, direkt anmelden.
+            $extend();
         });
+    }
+
+    /**
+     * Stehen noch `Statamic::booted()`-Rueckrufe aus?
+     *
+     * Statamic bietet dafuer keine Frage an; die Warteschlange ist eine
+     * geschuetzte statische Eigenschaft. Gelesen, nicht veraendert, und jeder
+     * Fehlschlag heisst "nein": dann wird direkt angemeldet, und im
+     * schlechtesten Fall steht der Rueckruf vor einem Addon, das dann auf der
+     * allgemeinen Seite landet, nicht nirgends.
+     */
+    protected function statamicBootedCallbacksPending(): bool
+    {
+        try {
+            $callbacks = (new \ReflectionProperty(Statamic::class, 'bootedCallbacks'))->getValue();
+
+            return is_array($callbacks) && $callbacks !== [];
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**
