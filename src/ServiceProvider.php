@@ -12,6 +12,7 @@ use Goldnead\BrandContext\Queue\BrandOnQueue;
 use Goldnead\BrandContext\Sending\BrandSenderIdentity;
 use Goldnead\BrandContext\Settings\NavPlacement;
 use Goldnead\BrandContext\Settings\SettingsManager;
+use Goldnead\BrandContext\Settings\SettingsNavChild;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Event;
@@ -476,7 +477,8 @@ class ServiceProvider extends BaseServiceProvider
             // item that merely forwards somewhere was reported as a bug: this
             // one opens the page of the addon it sits under.
             // {@see BrandSettingsController::index()}.
-            $child = (new NavItem)
+            $child = (new SettingsNavChild)
+                ->forNamespace($namespace)
                 ->display(__('brand-context::messages.nav_settings_child'))
                 ->route('brand-context.settings.index', ['section' => $namespace])
                 ->icon($registry->icon($namespace));
@@ -503,16 +505,26 @@ class ServiceProvider extends BaseServiceProvider
     {
         $existing = $parent->children();
 
+        // Ein Closure wird hier aufgeloest, nicht eingewickelt. Statamic merkt sich
+        // die URLs ungeloester Kinder ohne Query und haelt den Eltern-Eintrag fuer
+        // aktiv, sobald irgendein Unterpunkt dieselbe Route hat: alle Addons mit
+        // eigener Nav leuchteten auf der Einstellungsseite auf. Die Kosten sind,
+        // dass das Closure bei jedem Aufbau der Nav laeuft statt erst beim
+        // Aufklappen. Wirft es, bleibt es ein Closure, mit dem Kind darin.
         if (is_callable($existing)) {
-            $parent->children(function () use ($existing, $child) {
-                $items = $existing();
-                $items = $items instanceof Collection ? $items->all() : (array) $items;
-                $items[] = $child;
+            try {
+                $existing = $existing();
+            } catch (\Throwable) {
+                $parent->children(function () use ($existing, $child) {
+                    $items = $existing();
+                    $items = $items instanceof Collection ? $items->all() : (array) $items;
+                    $items[] = $child;
 
-                return $items;
-            });
+                    return $items;
+                });
 
-            return;
+                return;
+            }
         }
 
         $items = $existing === null ? [] : collect($existing)->all();

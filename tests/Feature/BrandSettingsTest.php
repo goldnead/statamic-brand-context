@@ -1160,12 +1160,32 @@ it('keeps the children of a parent entry that gives them as a closure', function
 
     $zeppelin = collect($items)->first(fn ($item) => $item->display() === 'Zeppelin');
 
-    // Erst beim Aufklappen aufgeloest, wie Statamic es tut.
-    expect(is_callable($zeppelin->children()))->toBeTrue();
+    // Hier aufgeloest und nicht eingewickelt: ein ungeloestes Closure macht
+    // Statamic zufolge jeden Eltern-Eintrag aktiv, dessen Kind dieselbe Route hat.
+    expect(is_callable($zeppelin->children()))->toBeFalse()
+        ->and(collect($zeppelin->children())->map->display()->all())->toBe(['Flights', 'Settings']);
+});
 
-    $zeppelin->resolveChildren();
+it('marks only the settings child of the addon whose page is open as active', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(NavParentAddonSettings::class);
 
-    expect(collect($zeppelin->children())->map->display()->all())->toBe(['Flights', 'Settings']);
+    $items = settingsNavItems(new FakeUser('admin', 'admin@example.com', null, ['manage zeppelin settings']), function ($nav) {
+        $nav->create('Zeppelin')->section('Tools')->url('/cp/zeppelin');
+    });
+
+    $child = collect($items[0]->children())->first();
+
+    // Alle diese Unterpunkte teilen eine Route, Statamic vergleicht ohne Query.
+    $request = Request::create('/cp/brand-settings', 'GET', ['section' => 'zeppelin']);
+    $request->setRouteResolver(fn () => app('router')->getRoutes()->getByName('statamic.cp.brand-context.settings.index'));
+    app()->instance('request', $request);
+    expect($child->isActive())->toBeTrue();
+
+    $request = Request::create('/cp/brand-settings', 'GET', ['section' => 'leadhub']);
+    $request->setRouteResolver(fn () => app('router')->getRoutes()->getByName('statamic.cp.brand-context.settings.index'));
+    app()->instance('request', $request);
+    expect($child->isActive())->toBeFalse();
 });
 
 it('falls back to the general entry when the parent entry does not exist', function () {
