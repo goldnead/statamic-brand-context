@@ -1279,7 +1279,6 @@ it('names the entry and the tab by settingsTitle() when an addon declares one', 
         ->and($tabs)->toBe(['Luftschiff-Einstellungen', 'Widgets']);
 });
 
-
 /**
  * Die Seite selbst: ein Addon mit eigener Nav zeigt nur sich, ohne Tableiste,
  * die allgemeine Seite zeigt nur die anderen.
