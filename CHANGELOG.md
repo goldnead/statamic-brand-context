@@ -2,23 +2,39 @@
 
 ## Unreleased
 
-### Changed: Einstellungen in der Seitenleiste je nach eigener Navigation
+## 1.16.0 — 2026-10-17
 
-Statt eines Eintrags je Addon in der Sektion "Settings" (rund 25) und einer Tableiste mit ebenso
-vielen Tabs:
+### Changed: settings in the sidebar, next to the addon's own navigation
 
-- Ein Addon mit eigener CP-Navigation sagt per optionalem `settingsNavParent()` (`[Sektion, Name]`
-  seines `Nav::extend()`-Eintrags), und bekommt einen Unterpunkt "Settings" unter diesem Eintrag.
-  Die Seite dahinter (`?section=<namespace>`) zeigt nur dieses Addon, ohne Tableiste, mit dem
-  Namen des Addons als Titel.
-- Alle anderen teilen sich die allgemeine Seite "Addon Suite": ein Eintrag in "Settings", Tabs nur
-  fuer diese Addons.
-- Rueckweg: findet sich der Eltern-Eintrag zur Laufzeit nicht oder darf der Benutzer ihn nicht
-  sehen, steht das Addon auf der allgemeinen Seite. Nie ein Addon ohne Zugang.
-- Der `Nav::extend()`-Rueckruf wird aus `booted()` angemeldet, damit die Eintraege der Addons vor
-  ihm stehen.
-- `SettingsRegistry::navParent()`, `Settings\NavPlacement`. Kein Interface-Bruch: die Methode ist
-  nur dokumentiert, nicht deklariert.
+Instead of one entry per addon in the "Settings" section (about 25) and a tab bar with as many tabs:
+
+- An addon with its own Control Panel navigation names it through the optional
+  `settingsNavParent()` (`[section, name]` of its `Nav::extend()` entry) and gets a sub-item
+  ("Einstellungen") under that entry. The page behind it (`?section=<namespace>`) shows only that
+  addon, without a tab bar, titled with the addon's name.
+- All other addons share one general page, "Addon-Suite": a single entry under "Settings", tabs
+  only for those addons.
+- Fallback: if the parent entry cannot be found at run time, or the user may not see it, the addon
+  appears on the general page instead. Never an addon without access.
+- The `Nav::extend()` callback is registered from `booted()`, so the addons' own entries come
+  before it.
+- `SettingsRegistry::navParent()`, `Settings\NavPlacement`. No interface break: the method is
+  documented, not declared.
+
+### Known limitation
+
+- A navigation entry the user hides through their own nav preferences also hides the settings
+  sub-item below it, and the addon is then not listed on the general page either. The settings
+  stay reachable through `?section=<namespace>`.
+
+### Upgrading
+
+- No migration, no new config key. Addons that declare `settingsNavParent()` need this version for
+  the sub-item; older versions ignore the method.
+
+### Build
+
+- CP bundle rebuilt against statamic/cms 6.36.0.
 
 ## 1.15.1 — 2026-09-25
 
