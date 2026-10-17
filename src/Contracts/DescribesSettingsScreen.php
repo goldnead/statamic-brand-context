@@ -22,6 +22,14 @@ use Goldnead\BrandContext\Settings\SettingsRegistry;
  * signatures, and as the written-down shape of what the registry asks for.
  * Declaring one of the two methods without declaring this interface works
  * exactly as well.
+ *
+ * **`settingsNavParent(): array` is deliberately not declared here.** It is
+ * optional like the two above, but an interface method would be a fatal for
+ * every addon that already implements this interface (statamic-affiliates
+ * does). It returns `[section, name]` of the addon's own Control Panel nav
+ * entry, spelled exactly as its `Nav::extend()` does, and puts the addon's
+ * "Settings" link under that entry instead of on the suite's general page. See
+ * {@see ProvidesSettings} and {@see SettingsRegistry::navParent()}.
  */
 interface DescribesSettingsScreen
 {

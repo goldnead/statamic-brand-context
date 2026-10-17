@@ -10,7 +10,9 @@ return [
     'user_brands_instructions' => 'Which brands does this person appear in as an assignee? Empty = all of them.',
 
     // Suite settings screen
-    'nav_settings' => 'Addon Settings',
+    'nav_settings' => 'Addon Suite settings',
+    'nav_suite' => 'Addon Suite',
+    'nav_settings_child' => 'Settings',
     'settings_saved' => ':addon settings saved.',
     'settings_brand_notice' => 'These settings apply to :brand. Switch brand in the header to edit another one.',
     'settings_follows_config' => 'Anything not changed here follows config/:path.php.',

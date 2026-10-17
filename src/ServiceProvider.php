@@ -10,16 +10,19 @@ use Goldnead\BrandContext\Http\Middleware\SetBrandForSite;
 use Goldnead\BrandContext\Http\Middleware\SetBrandFromSession;
 use Goldnead\BrandContext\Queue\BrandOnQueue;
 use Goldnead\BrandContext\Sending\BrandSenderIdentity;
+use Goldnead\BrandContext\Settings\NavPlacement;
 use Goldnead\BrandContext\Settings\SettingsManager;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider as BaseServiceProvider;
 use Statamic\Contracts\Auth\UserRepository as UserRepositoryContract;
 use Statamic\Events\UserBlueprintFound;
 use Statamic\Events\UserSaved;
 use Statamic\Events\UserSaving;
+use Statamic\CP\Navigation\NavItem;
 use Statamic\Facades\CP\Nav;
 use Statamic\Facades\User;
 use Statamic\Statamic;
@@ -338,8 +341,10 @@ class ServiceProvider extends BaseServiceProvider
     }
 
     /**
-     * The suite's settings screen: one page, one tab per registered addon, and
-     * one sidebar entry per registered addon pointing at its own tab.
+     * The suite's settings screen. An addon with a Control Panel navigation of
+     * its own gets a "Settings" child under that entry, opening a page for that
+     * addon alone; every other addon is a tab on one general page with a single
+     * sidebar entry. {@see extendNavWithSettings()}.
      *
      * Registered in both single- and multi-brand mode, unlike the membership
      * screen below. A single-brand install still has settings; what it does
@@ -357,59 +362,128 @@ class ServiceProvider extends BaseServiceProvider
             Route::group([], __DIR__.'/../routes/cp-settings.php');
         });
 
-        Nav::extend(function ($nav) {
-            $registry = $this->app->make(SettingsRegistry::class);
+        $this->app->scoped(NavPlacement::class);
 
-            // Nothing registered means no screen. An empty settings page is
-            // worse than no link: it reads as "the suite has no settings"
-            // rather than as "no installed addon offers any".
-            if ($registry->all() === []) {
-                return;
-            }
-
-            // An entry is built per addon the operator may actually manage,
-            // because a nav entry leading to a page with nothing on it is a
-            // dead end. NavItem::can() takes a single permission and there are
-            // as many here as there are addons, so the check is done in the
-            // open rather than handed to it.
-            $user = User::current();
-
-            // `can()` is on the Statamic user implementation, not on the
-            // contract the facade is typed against. Guarded rather than
-            // assumed, the same way every other authorisation check in this
-            // package is: a host that swaps the user repository must not take
-            // the Control Panel down with a fatal from the nav builder.
-            if ($user === null || ! method_exists($user, 'can')) {
-                return;
-            }
-
-            // Built here rather than in each addon's own provider. The link an
-            // addon would register is the same link for all twenty-two, minus
-            // the namespace, and it is this package that knows which addons
-            // registered and which permission gates each one. Twenty-two
-            // copies of this block in twenty-two repositories would be
-            // twenty-two chances to drift from a screen that lives here.
-            //
-            // `sorted()`, so an operator finds the same order twice.
-            foreach (array_keys($registry->sorted()) as $namespace) {
-                $permission = $registry->permission($namespace);
-
-                if ($permission === null || ! $user->can($permission)) {
-                    continue;
-                }
-
-                // Named after the addon, not "Addon Settings" twenty-two
-                // times. And `?section=`, which is the whole difference
-                // between this and the child entry `statamic-automations`
-                // removed in 2026 after a menu item that merely forwards
-                // somewhere was reported as a bug: this one opens the tab it
-                // promises. {@see BrandSettingsController::initialSection()}.
-                $nav->create($registry->title($namespace))
-                    ->section('Settings')
-                    ->route('brand-context.settings.index', ['section' => $namespace])
-                    ->icon($registry->icon($namespace));
-            }
+        // Erst nach dem Booten angemeldet, und das ist die Reihenfolge, auf die
+        // es ankommt: Statamic ruft die `Nav::extend()`-Rueckrufe in der
+        // Reihenfolge ihrer Anmeldung auf. Meldete dieses Paket seinen im
+        // eigenen `boot()` an, kaeme es vor oder nach den Addons, je nachdem,
+        // wie Composer die Provider ordnet, und ein Eltern-Eintrag, der noch
+        // nicht existiert, waere nicht zu finden. Aus `booted()` heraus haben
+        // alle Provider ihr `boot()` hinter sich, und damit stehen ihre
+        // Rueckrufe vor diesem.
+        $this->app->booted(function () {
+            Nav::extend(fn ($nav) => $this->extendNavWithSettings($nav));
         });
+    }
+
+    /**
+     * Die Einstellungen in die Seitenleiste haengen.
+     *
+     * Ein Addon mit eigener CP-Navigation bekommt einen Unterpunkt unter
+     * seinem Eintrag (`settingsNavParent()`), alle anderen teilen sich einen
+     * einzigen Eintrag in der Sektion "Settings", die allgemeine Seite der
+     * Suite. Findet sich der Eltern-Eintrag nicht, oder darf der Benutzer ihn
+     * nicht sehen, gilt das Addon als eines ohne eigene Navigation: nie ein
+     * Addon unerreichbar machen. {@see NavPlacement}.
+     */
+    protected function extendNavWithSettings($nav): void
+    {
+        $registry = $this->app->make(SettingsRegistry::class);
+        $placement = $this->app->make(NavPlacement::class);
+
+        // Nothing registered means no screen. An empty settings page is
+        // worse than no link: it reads as "the suite has no settings"
+        // rather than as "no installed addon offers any".
+        if ($registry->all() === []) {
+            return;
+        }
+
+        // An entry is built per addon the operator may actually manage,
+        // because a nav entry leading to a page with nothing on it is a
+        // dead end. NavItem::can() takes a single permission and there are
+        // as many here as there are addons, so the check is done in the
+        // open rather than handed to it.
+        $user = User::current();
+
+        // `can()` is on the Statamic user implementation, not on the
+        // contract the facade is typed against. Guarded rather than
+        // assumed, the same way every other authorisation check in this
+        // package is: a host that swaps the user repository must not take
+        // the Control Panel down with a fatal from the nav builder.
+        if ($user === null || ! method_exists($user, 'can')) {
+            return;
+        }
+
+        $general = false;
+
+        // `sorted()`, so an operator finds the same order twice.
+        foreach (array_keys($registry->sorted()) as $namespace) {
+            $permission = $registry->permission($namespace);
+
+            if ($permission === null || ! $user->can($permission)) {
+                continue;
+            }
+
+            $parent = $placement->parentItem($nav, $registry->navParent($namespace), $user);
+
+            if ($parent === null) {
+                $placement->remember($namespace, false);
+                $general = true;
+
+                continue;
+            }
+
+            $placement->remember($namespace, true);
+
+            // `?section=`, which is the whole difference between this and the
+            // child entry `statamic-automations` removed in 2026 after a menu
+            // item that merely forwards somewhere was reported as a bug: this
+            // one opens the page of the addon it sits under.
+            // {@see BrandSettingsController::index()}.
+            $child = (new NavItem)
+                ->display(__('brand-context::messages.nav_settings_child'))
+                ->route('brand-context.settings.index', ['section' => $namespace])
+                ->icon($registry->icon($namespace));
+
+            $this->appendNavChild($parent, $child);
+        }
+
+        if (! $general) {
+            return;
+        }
+
+        $nav->create(__('brand-context::messages.nav_suite'))
+            ->section('Settings')
+            ->route('brand-context.settings.index')
+            ->icon('sliders-horizontal');
+    }
+
+    /**
+     * Ein Kind an einen fremden Eintrag haengen, ohne dessen eigene Kinder zu
+     * verlieren. Die Kinder koennen ein Closure (erst beim Aufklappen
+     * aufgeloest), eine fertige Liste oder gar nichts sein.
+     */
+    protected function appendNavChild(NavItem $parent, NavItem $child): void
+    {
+        $existing = $parent->children();
+
+        if (is_callable($existing)) {
+            $parent->children(function () use ($existing, $child) {
+                $items = $existing();
+                $items = $items instanceof Collection ? $items->all() : (array) $items;
+                $items[] = $child;
+
+                return $items;
+            });
+
+            return;
+        }
+
+        $items = $existing === null ? [] : collect($existing)->all();
+        $items[] = $child;
+
+        $parent->children($items);
     }
 
     /**

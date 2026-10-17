@@ -317,7 +317,7 @@ and the `config()` values at runtime come from here; the addon declares the fiel
 else. Required methods: `settingsNamespace()`, `settingsConfigPath()`, `settingsPermission()`,
 `settingsGroups()`.
 
-Three optional methods, read with `method_exists()` so an addon written against an older version
+Four optional methods, read with `method_exists()` so an addon written against an older version
 keeps working unchanged:
 
 | Method | Default | What it sets |
@@ -325,6 +325,15 @@ keeps working unchanged:
 | `settingsTitle(): string` | the addon's name from its package | the sidebar entry and the tab (since 1.15) |
 | `settingsOrder(): int` | `100`, low sorts first | the tab's position |
 | `settingsIcon(): string` | `sliders-horizontal` | the sidebar icon |
+| `settingsNavParent(): array` | none | `[section, name]` of the addon's own CP nav entry, spelled as in its `Nav::extend()` (since 1.16) |
+
+**Where the sidebar link goes.** An addon with a Control Panel navigation of its own names that
+entry in `settingsNavParent()` (`['Tools', __('Inbox')]`) and gets a "Settings" child under it,
+which opens a page for that addon alone (no tab bar, the addon's name as title). Every other addon
+is a tab on one general page, "Addon Suite", with a single entry in the *Settings* section. If the
+parent entry is not found at runtime, or the user may not see it, the addon falls back to the
+general page, so no addon becomes unreachable. The nav is read at boot: the parent must be
+registered with `Nav::extend()` in the addon's own provider.
 
 `settingsTitle()` is for a host that registers settings of its own: without it the title is derived
 from the namespace, and an app namespace like `choirlive-mail` shows up as "Choirlive Mail".

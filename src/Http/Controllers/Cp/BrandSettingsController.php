@@ -6,6 +6,7 @@ use Goldnead\BrandContext\BrandManager;
 use Goldnead\BrandContext\Http\Requests\UpdateBrandSettingsRequest;
 use Goldnead\BrandContext\Models\Brand;
 use Goldnead\BrandContext\Settings\AddonTitle;
+use Goldnead\BrandContext\Settings\NavPlacement;
 use Goldnead\BrandContext\Settings\SettingsManager;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
 use Illuminate\Http\RedirectResponse;
@@ -39,19 +40,41 @@ class BrandSettingsController extends BaseController
         protected SettingsRegistry $registry,
         protected SettingsManager $settings,
         protected BrandManager $brands,
+        protected NavPlacement $placement,
     ) {}
 
     public function index(Request $request): Response
     {
+        // Wer verwaltet werden darf, in der Reihenfolge der Tabs. `sorted()`,
+        // not `all()`: `all()` is boot order, and a tab bar in boot order is a
+        // different bar on every install.
+        $manageable = array_values(array_filter(
+            array_keys($this->registry->sorted()),
+            fn (string $namespace) => $this->canManage($request, $namespace),
+        ));
+
+        // Ein Addon mit eigener Navigation hat seine eigene Seite: Unterpunkt
+        // "Settings" unter seinem Eintrag, `?section=<namespace>`, ein Formular,
+        // keine Tableiste. Alle anderen teilen sich die allgemeine Seite.
+        // `isViaParent()` ist dieselbe Antwort, die die Seitenleiste bekommen
+        // hat, und faellt im Zweifel auf "allgemeine Seite", nie auf "nirgends".
+        $wanted = $request->query('section');
+        $single = is_string($wanted)
+            && in_array($wanted, $manageable, true)
+            && $this->placement->isViaParent($wanted)
+            ? $wanted
+            : null;
+
+        $namespaces = $single !== null
+            ? [$single]
+            : array_values(array_filter(
+                $manageable,
+                fn (string $namespace) => ! $this->placement->isViaParent($namespace),
+            ));
+
         $sections = [];
 
-        // `sorted()`, not `all()`: `all()` is boot order, and a tab bar in boot
-        // order is a different bar on every install.
-        foreach (array_keys($this->registry->sorted()) as $namespace) {
-            if (! $this->canManage($request, $namespace)) {
-                continue;
-            }
-
+        foreach ($namespaces as $namespace) {
             $sections[] = [
                 'namespace' => $namespace,
                 'title' => $this->title($namespace),
@@ -87,6 +110,9 @@ class BrandSettingsController extends BaseController
             // would point at a brand the page could not show.
             'multiBrand' => $brand !== null && $this->brands->multiBrandEnabled(),
             'sections' => $sections,
+            // Der Titel der Einzelseite: der Name des Addons. Null auf der
+            // allgemeinen Seite, dort gilt die Ueberschrift der Suite.
+            'pageTitle' => $single !== null ? $this->title($single) : null,
             // Welcher Tab beim Oeffnen aufgeht. Ohne das waere der
             // Seitenleisten-Eintrag je Addon genau der Fehler, den
             // `statamic-automations` 2026 schon einmal gemeldet bekommen hat:

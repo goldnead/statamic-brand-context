@@ -5,12 +5,14 @@ use Goldnead\BrandContext\Http\Requests\UpdateBrandSettingsRequest;
 use Goldnead\BrandContext\Models\Brand;
 use Goldnead\BrandContext\Models\BrandSetting;
 use Goldnead\BrandContext\ServiceProvider;
+use Goldnead\BrandContext\Settings\NavPlacement;
 use Goldnead\BrandContext\Settings\SettingsManager;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
 use Goldnead\BrandContext\Tests\Fixtures\BrokenAddonSettings;
 use Goldnead\BrandContext\Tests\Fixtures\FakeAddonSettings;
 use Goldnead\BrandContext\Tests\Fixtures\FakeUser;
 use Goldnead\BrandContext\Tests\Fixtures\LateAddonSettings;
+use Goldnead\BrandContext\Tests\Fixtures\NavParentAddonSettings;
 use Goldnead\BrandContext\Tests\Fixtures\OrderedAddonSettings;
 use Goldnead\BrandContext\Tests\TestCase;
 use Illuminate\Contracts\Validation\Validator;
@@ -1022,7 +1024,7 @@ it('keeps the section when an addon falls over on the optional half', function (
  *
  * @return array<int, NavItem>
  */
-function settingsNavItems(FakeUser $user): array
+function settingsNavItems(FakeUser $user, ?Closure $prepare = null): array
 {
     // `cp_route()` braucht beides, und ohne Statamics Boot steht keins davon.
     config()->set('statamic.cp.enabled', true);
@@ -1032,6 +1034,10 @@ function settingsNavItems(FakeUser $user): array
     // kennt die Platte `standard` nur, weil Statamics eigener
     // FilesystemServiceProvider sie anlegt. Der laeuft hier nicht.
     config()->set('filesystems.disks.standard', ['driver' => 'local', 'root' => base_path()]);
+
+    // Kinder bekommen ihre Kennung aus dem Anzeigenamen, und die Umschrift
+    // liest diesen Schalter aus Statamics Config, die hier nicht geladen ist.
+    config()->set('statamic.system.ascii_replace_extra_symbols', false);
 
     Route::get('/cp/brand-settings', fn () => '')
         ->name('statamic.cp.brand-context.settings.index');
@@ -1048,6 +1054,12 @@ function settingsNavItems(FakeUser $user): array
 
     $nav = Nav::getFacadeRoot();
 
+    // Die Eintraege der Addons stehen vor dem Rueckruf dieses Pakets, wie sie
+    // es in Statamic tun: der Rueckruf wird erst nach dem Booten angemeldet.
+    if ($prepare !== null) {
+        $prepare($nav);
+    }
+
     $extensions = (new ReflectionProperty($nav, 'extensions'))->getValue($nav);
 
     foreach ($extensions as $extension) {
@@ -1057,7 +1069,7 @@ function settingsNavItems(FakeUser $user): array
     return $nav->items();
 }
 
-it('puts one sidebar entry per addon, each pointing at its own tab', function () {
+it('folds every addon without a nav of its own into one general entry', function () {
     config()->set('zeppelin', ['label' => 'packaged']);
     app(SettingsRegistry::class)->register(OrderedAddonSettings::class);
 
@@ -1066,32 +1078,147 @@ it('puts one sidebar entry per addon, each pointing at its own tab', function ()
         'manage zeppelin settings',
     ]));
 
-    // Nach dem Addon benannt, nicht zweiundzwanzigmal "Addon-Einstellungen",
-    // und in derselben Reihenfolge wie die Tabs.
-    expect(array_map(fn ($item) => $item->display(), $items))->toBe(['Zeppelin', 'Widgets']);
-
-    // Der Punkt des ganzen Tickets. `statamic-automations` hat seinen alten
-    // Settings-Kindeintrag entfernt, weil ein Menuepunkt, der nur weiterleitet,
-    // als Bug gemeldet wurde. Ohne `?section=` waere dieser hier derselbe Bug.
-    expect($items[0]->url())->toContain('section=zeppelin')
-        ->and($items[1]->url())->toContain('section=widgets');
-
-    // Das Symbol kommt vom Addon, wenn es eines nennt, und sonst von der
-    // Vorgabe — derselbe Glyph, den der eine Sammeleintrag vorher trug.
-    expect($items[0]->icon())->toBe('lightning-bolt')
-        ->and($items[1]->icon())->toBe(SettingsRegistry::DEFAULT_ICON)
-        ->and($items[0]->section())->toBe('Settings');
+    // Ein Eintrag fuer alle, nicht einer je Addon: bei zwanzig Addons war die
+    // Sektion "Settings" sonst eine Liste aus zwanzig Zeilen.
+    expect(array_map(fn ($item) => $item->display(), $items))->toBe(['Addon Suite'])
+        ->and($items[0]->section())->toBe('Settings')
+        ->and($items[0]->url())->not->toContain('section=');
 });
 
-it('leaves out the sidebar entry of an addon the user may not manage', function () {
-    // Ein Menuepunkt auf einen Tab, den es fuer diesen Benutzer nicht gibt,
-    // fuehrt auf eine Seite, auf der nichts von dem steht, was er verspricht.
-    config()->set('zeppelin', ['label' => 'packaged']);
-    app(SettingsRegistry::class)->register(OrderedAddonSettings::class);
-
+it('shows the general entry to a user who manages only an addon without a nav', function () {
     $items = settingsNavItems(new FakeUser('halb', 'halb@example.com', null, ['manage widget settings']));
 
-    expect(array_map(fn ($item) => $item->display(), $items))->toBe(['Widgets']);
+    expect(array_map(fn ($item) => $item->display(), $items))->toBe(['Addon Suite']);
+});
+
+it('leaves the general entry out when every permitted addon has its own nav', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(NavParentAddonSettings::class);
+
+    // Zeppelin hat eine eigene Nav, Widgets darf der Benutzer nicht: nichts
+    // bleibt fuer die allgemeine Seite uebrig.
+    $items = settingsNavItems(new FakeUser('nur', 'nur@example.com', null, ['manage zeppelin settings']), function ($nav) {
+        $nav->create('Zeppelin')->section('Tools')->url('/cp/zeppelin');
+    });
+
+    expect(array_map(fn ($item) => $item->display(), $items))->toBe(['Zeppelin']);
+});
+
+it('hangs the settings of an addon with its own nav as a child under that entry', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(NavParentAddonSettings::class);
+
+    $items = settingsNavItems(new FakeUser('admin', 'admin@example.com', null, [
+        'manage widget settings',
+        'manage zeppelin settings',
+    ]), function ($nav) {
+        $nav->create('Zeppelin')->section('Tools')->url('/cp/zeppelin');
+    });
+
+    $byName = [];
+    foreach ($items as $item) {
+        $byName[$item->display()] = $item;
+    }
+
+    // Kein eigener Eintrag mehr in "Settings" fuer Zeppelin, nur der eine
+    // allgemeine fuer Widgets.
+    expect(array_keys($byName))->toBe(['Zeppelin', 'Addon Suite'])
+        ->and($byName['Addon Suite']->section())->toBe('Settings');
+
+    $children = collect($byName['Zeppelin']->children())->values();
+
+    expect($children)->toHaveCount(1)
+        ->and($children[0]->display())->toBe('Settings')
+        ->and($children[0]->url())->toContain('section=zeppelin')
+        ->and(app(NavPlacement::class)->isViaParent('zeppelin'))->toBeTrue()
+        ->and(app(NavPlacement::class)->isViaParent('widgets'))->toBeFalse();
+});
+
+it('keeps the children the parent entry already had, whether list or closure', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(NavParentAddonSettings::class);
+
+    $items = settingsNavItems(new FakeUser('admin', 'admin@example.com', null, ['manage zeppelin settings']), function ($nav) {
+        $nav->create('Zeppelin')->section('Tools')->url('/cp/zeppelin')->children([
+            'Flights' => '/cp/zeppelin/flights',
+        ]);
+    });
+
+    $zeppelin = collect($items)->first(fn ($item) => $item->display() === 'Zeppelin');
+    expect(collect($zeppelin->children())->map->display()->all())->toBe(['Flights', 'Settings']);
+});
+
+it('keeps the children of a parent entry that gives them as a closure', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(NavParentAddonSettings::class);
+
+    $items = settingsNavItems(new FakeUser('admin', 'admin@example.com', null, ['manage zeppelin settings']), function ($nav) {
+        $nav->create('Zeppelin')->section('Tools')->url('/cp/zeppelin')->children(fn () => [
+            'Flights' => '/cp/zeppelin/flights',
+        ]);
+    });
+
+    $zeppelin = collect($items)->first(fn ($item) => $item->display() === 'Zeppelin');
+
+    // Erst beim Aufklappen aufgeloest, wie Statamic es tut.
+    expect(is_callable($zeppelin->children()))->toBeTrue();
+
+    $zeppelin->resolveChildren();
+
+    expect(collect($zeppelin->children())->map->display()->all())->toBe(['Flights', 'Settings']);
+});
+
+it('falls back to the general entry when the parent entry does not exist', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(NavParentAddonSettings::class);
+
+    // Keine Nav von Zeppelin unter dem genannten Namen (Addon-Nav fehlt oder
+    // liegt in einer anderen Sektion).
+    $items = settingsNavItems(new FakeUser('admin', 'admin@example.com', null, ['manage zeppelin settings']), function ($nav) {
+        $nav->create('Zeppelin')->section('Content')->url('/cp/zeppelin');
+    });
+
+    expect(array_map(fn ($item) => $item->display(), $items))->toBe(['Zeppelin', 'Addon Suite'])
+        ->and($items[0]->children())->toBeNull()
+        ->and(app(NavPlacement::class)->isViaParent('zeppelin'))->toBeFalse();
+});
+
+it('falls back to the general entry when the user may not see the parent entry', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(NavParentAddonSettings::class);
+
+    $items = settingsNavItems(new FakeUser('admin', 'admin@example.com', null, ['manage zeppelin settings']), function ($nav) {
+        $nav->create('Zeppelin')->section('Tools')->url('/cp/zeppelin')->can('view zeppelin');
+    });
+
+    // Das Kind wuerde mit dem Eltern-Eintrag verschwinden: Zeppelin waere
+    // nirgends erreichbar.
+    expect(array_map(fn ($item) => $item->display(), $items))->toBe(['Zeppelin', 'Addon Suite'])
+        ->and($items[0]->children())->toBeNull()
+        ->and(app(NavPlacement::class)->isViaParent('zeppelin'))->toBeFalse();
+});
+
+it('ignores a settingsNavParent() that is not two non-empty strings', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+
+    $kaputt = new class extends OrderedAddonSettings
+    {
+        public static function settingsNavParent(): array
+        {
+            return ['Tools'];
+        }
+    };
+
+    $registry = app(SettingsRegistry::class);
+    $registry->register($kaputt::class);
+
+    expect($registry->navParent('zeppelin'))->toBeNull()
+        ->and($registry->navParent('widgets'))->toBeNull();
+
+    $registry->flush();
+    $registry->register(NavParentAddonSettings::class);
+
+    expect($registry->navParent('zeppelin'))->toBe(['Tools', 'Zeppelin']);
 });
 
 it('leaves the sidebar alone when the user may manage nothing', function () {
@@ -1128,6 +1255,70 @@ it('names the entry and the tab by settingsTitle() when an addon declares one', 
 
     expect($registry->title('zeppelin'))->toBe('Luftschiff-Einstellungen')
         ->and($registry->title('widgets'))->toBe('Widgets')
-        ->and(array_map(fn ($item) => $item->display(), $items))->toBe(['Luftschiff-Einstellungen', 'Widgets'])
+        ->and(array_map(fn ($item) => $item->display(), $items))->toBe(['Addon Suite'])
         ->and($tabs)->toBe(['Luftschiff-Einstellungen', 'Widgets']);
+});
+
+
+/**
+ * Die Seite selbst: ein Addon mit eigener Nav zeigt nur sich, ohne Tableiste,
+ * die allgemeine Seite zeigt nur die anderen.
+ */
+it('shows only the addon of its own nav when the URL names it', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(NavParentAddonSettings::class);
+    app(NavPlacement::class)->remember('zeppelin', true);
+    app(NavPlacement::class)->remember('widgets', false);
+
+    $props = settingsScreen(['section' => 'zeppelin'], ['manage widget settings', 'manage zeppelin settings']);
+
+    expect(Arr::pluck($props['sections'], 'namespace'))->toBe(['zeppelin'])
+        ->and($props['initialSection'])->toBe('zeppelin')
+        ->and($props['pageTitle'])->toBe('Zeppelin');
+});
+
+it('keeps the addons with their own nav off the general page', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(NavParentAddonSettings::class);
+    app(NavPlacement::class)->remember('zeppelin', true);
+    app(NavPlacement::class)->remember('widgets', false);
+
+    $props = settingsScreen([], ['manage widget settings', 'manage zeppelin settings']);
+
+    expect(Arr::pluck($props['sections'], 'namespace'))->toBe(['widgets'])
+        ->and($props['pageTitle'])->toBeNull();
+
+    // Auch mit einer URL, die ein Addon der allgemeinen Seite nennt.
+    $props = settingsScreen(['section' => 'widgets'], ['manage widget settings', 'manage zeppelin settings']);
+
+    expect(Arr::pluck($props['sections'], 'namespace'))->toBe(['widgets'])
+        ->and($props['initialSection'])->toBe('widgets')
+        ->and($props['pageTitle'])->toBeNull();
+});
+
+it('puts an addon on the general page when its parent entry could not be placed', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(NavParentAddonSettings::class);
+    app(NavPlacement::class)->remember('zeppelin', false);
+    app(NavPlacement::class)->remember('widgets', false);
+
+    $props = settingsScreen(['section' => 'zeppelin'], ['manage widget settings', 'manage zeppelin settings']);
+
+    // Nie ein Addon unerreichbar: ohne Eltern-Eintrag ist es ein Tab der
+    // allgemeinen Seite, und die URL oeffnet ihn.
+    expect(Arr::pluck($props['sections'], 'namespace'))->toBe(['zeppelin', 'widgets'])
+        ->and($props['initialSection'])->toBe('zeppelin')
+        ->and($props['pageTitle'])->toBeNull();
+});
+
+it('does not show a single-addon page for an addon the user may not manage', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(NavParentAddonSettings::class);
+    app(NavPlacement::class)->remember('zeppelin', true);
+    app(NavPlacement::class)->remember('widgets', false);
+
+    $props = settingsScreen(['section' => 'zeppelin'], ['manage widget settings']);
+
+    expect(Arr::pluck($props['sections'], 'namespace'))->toBe(['widgets'])
+        ->and($props['pageTitle'])->toBeNull();
 });

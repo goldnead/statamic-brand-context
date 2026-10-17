@@ -10,7 +10,9 @@ return [
     'user_brands_instructions' => 'In welchen Marken taucht diese Person als Zuständige:r auf? Leer = in allen.',
 
     // Einstellungs-Bildschirm der Suite
-    'nav_settings' => 'Addon-Einstellungen',
+    'nav_settings' => 'Einstellungen der Addon-Suite',
+    'nav_suite' => 'Addon-Suite',
+    'nav_settings_child' => 'Einstellungen',
     'settings_saved' => 'Einstellungen für :addon gespeichert.',
     'settings_brand_notice' => 'Diese Einstellungen gelten für :brand. Für eine andere Marke oben im Kopf die Marke wechseln.',
     'settings_follows_config' => 'Was hier nicht geändert wurde, folgt weiter config/:path.php.',

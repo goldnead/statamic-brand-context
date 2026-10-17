@@ -56,6 +56,10 @@ const props = defineProps({
     updateUrl: { type: String, required: true },
     addonsUrl: { type: String, required: true },
     writable: { type: Boolean, default: true },
+    // Gesetzt, wenn die Seite nur ein Addon zeigt (Unterpunkt "Settings" unter
+    // dessen eigener Navigation): der Name des Addons. Null auf der
+    // allgemeinen Seite der Suite, dort steht die Ueberschrift der Suite.
+    pageTitle: { type: String, default: null },
 });
 
 const t = (key, replacements = {}) => __(`brand-context::messages.${key}`, replacements);
@@ -385,6 +389,8 @@ watch(activeSection, (namespace) => {
     }
 });
 
+const heading = computed(() => props.pageTitle ?? t('nav_settings'));
+
 const hasSections = computed(() => props.sections.length > 0);
 
 /**
@@ -419,7 +425,7 @@ watch(showsEmptyState, (empty) => toggleArchitecturalBackground(empty), { immedi
 </script>
 
 <template>
-    <Head :title="t('nav_settings')" />
+    <Head :title="heading" />
 
     <div class="max-w-page mx-auto" data-max-width-wrapper>
         <!-- An empty state gets a centered heading rather than <Header>, the
@@ -447,7 +453,7 @@ watch(showsEmptyState, (empty) => toggleArchitecturalBackground(empty), { immedi
         </template>
 
         <template v-else>
-        <Header :title="t('nav_settings')" icon="sliders-horizontal">
+        <Header :title="heading" icon="sliders-horizontal">
             <Badge v-if="multiBrand" :text="brand?.name" color="blue" data-brand-settings-brand />
         </Header>
 
@@ -589,7 +595,7 @@ watch(showsEmptyState, (empty) => toggleArchitecturalBackground(empty), { immedi
                              beiden Faellen, sie sind der Grund fuer diese
                              Reihe. -->
                         <h2
-                            v-if="! showsTabBar"
+                            v-if="! showsTabBar && ! pageTitle"
                             class="text-lg font-medium text-gray-900 dark:text-gray-100"
                         >{{ section.title }}</h2>
                         <p class="text-sm text-gray-500 dark:text-gray-400">

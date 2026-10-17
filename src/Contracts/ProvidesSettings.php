@@ -43,7 +43,15 @@ use Goldnead\BrandContext\Settings\SettingsRegistry;
  * public static function settingsOrder(): int;    // default 100, low sorts first
  * public static function settingsIcon(): string;  // default `sliders-horizontal`
  * public static function settingsTitle(): string; // default the addon's name (since 1.15)
+ * public static function settingsNavParent(): array; // [section, name] of the addon's own nav entry (since 1.16)
  * ```
+ *
+ * `settingsNavParent()` decides where the sidebar link goes. An addon that
+ * registers a Control Panel navigation of its own names that entry, exactly as
+ * its `Nav::extend()` spells it (`['Tools', __('Inbox')]`), and gets a
+ * "Settings" child under it opening a page for that addon alone. An addon
+ * without one, or whose entry cannot be found or seen at runtime, is a tab on
+ * the suite's general page. No addon ever ends up without a way in.
  *
  * They are written as a docblock rather than as interface methods, and that is
  * the whole point: a PHP interface has no defaults, so declaring either of them

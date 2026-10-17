@@ -519,4 +519,17 @@ describe('Suite settings screen', () => {
             .toBe('from the server');
         expect(wrapper.find('[data-settings-save="automations"]').attributes('disabled')).toBeDefined();
     });
+
+    it('zeigt auf der Einzelseite eines Addons mit eigener Navigation nur dessen Formular unter seinem Namen', () => {
+        const wrapper = mount(Settings, {
+            props: props({ sections: [other], initialSection: 'leadhub', pageTitle: 'LeadHub' }),
+        });
+
+        // Titel der Seite ist der Name des Addons, keine Tableiste, und die
+        // Ueberschrift im Abschnitt waere derselbe Name ein zweites Mal.
+        expect(wrapper.get('[data-stub="Header"]').attributes('title')).toBe('LeadHub');
+        expect(wrapper.find('[data-brand-settings-tabs-shell]').exists()).toBe(false);
+        expect(wrapper.find('[data-brand-settings-section="leadhub"] h2').exists()).toBe(false);
+        expect(wrapper.find('[data-brand-settings-section="leadhub"]').exists()).toBe(true);
+    });
 });

@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Changed: Einstellungen in der Seitenleiste je nach eigener Navigation
+
+Statt eines Eintrags je Addon in der Sektion "Settings" (rund 25) und einer Tableiste mit ebenso
+vielen Tabs:
+
+- Ein Addon mit eigener CP-Navigation sagt per optionalem `settingsNavParent()` (`[Sektion, Name]`
+  seines `Nav::extend()`-Eintrags), und bekommt einen Unterpunkt "Settings" unter diesem Eintrag.
+  Die Seite dahinter (`?section=<namespace>`) zeigt nur dieses Addon, ohne Tableiste, mit dem
+  Namen des Addons als Titel.
+- Alle anderen teilen sich die allgemeine Seite "Addon Suite": ein Eintrag in "Settings", Tabs nur
+  fuer diese Addons.
+- Rueckweg: findet sich der Eltern-Eintrag zur Laufzeit nicht oder darf der Benutzer ihn nicht
+  sehen, steht das Addon auf der allgemeinen Seite. Nie ein Addon ohne Zugang.
+- Der `Nav::extend()`-Rueckruf wird aus `booted()` angemeldet, damit die Eintraege der Addons vor
+  ihm stehen.
+- `SettingsRegistry::navParent()`, `Settings\NavPlacement`. Kein Interface-Bruch: die Methode ist
+  nur dokumentiert, nicht deklariert.
+
 ## 1.15.1 — 2026-09-25
 
 ### Docs

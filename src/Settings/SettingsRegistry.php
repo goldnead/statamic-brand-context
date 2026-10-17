@@ -394,6 +394,36 @@ class SettingsRegistry
     }
 
     /**
+     * Unter welchem Eintrag der eigenen CP-Navigation des Addons der Unterpunkt
+     * "Settings" haengen soll: `[Sektion, Name]`, exakt wie in dessen
+     * `Nav::extend()`.
+     *
+     * Optional (`settingsNavParent()`), wie {@see order()} und {@see icon()}.
+     * Ohne Antwort, oder mit einer, die keine zwei nichtleeren Zeichenketten
+     * ist, gibt es keinen Eltern-Eintrag: das Addon steht dann auf der
+     * allgemeinen Seite der Suite.
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    public function navParent(string $namespace): ?array
+    {
+        $parent = $this->askOptional($namespace, 'settingsNavParent', null);
+
+        if (! is_array($parent)) {
+            return null;
+        }
+
+        $parent = array_values($parent);
+
+        if (count($parent) < 2 || ! is_string($parent[0]) || ! is_string($parent[1])
+            || $parent[0] === '' || $parent[1] === '') {
+            return null;
+        }
+
+        return [$parent[0], $parent[1]];
+    }
+
+    /**
      * The name of an addon's sidebar entry and tab.
      *
      * Optional (`settingsTitle()`); without an answer the addon's own name
