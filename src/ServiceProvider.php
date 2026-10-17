@@ -13,6 +13,7 @@ use Goldnead\BrandContext\Sending\BrandSenderIdentity;
 use Goldnead\BrandContext\Settings\NavPlacement;
 use Goldnead\BrandContext\Settings\SettingsManager;
 use Goldnead\BrandContext\Settings\SettingsNavChild;
+use Goldnead\BrandContext\Settings\SettingsNavSuite;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Event;
@@ -490,8 +491,18 @@ class ServiceProvider extends BaseServiceProvider
             return;
         }
 
-        $nav->create(__('brand-context::messages.nav_suite'))
-            ->section('Settings')
+        // Statamic kennt nur `create()` zum Anmelden, und das baut ein NavItem.
+        // Wir brauchen die Unterklasse (siehe SettingsNavSuite), also wird das
+        // soeben angelegte Item gegen sie getauscht.
+        $created = $nav->create(__('brand-context::messages.nav_suite'));
+        $suite = (new SettingsNavSuite)->display($created->display());
+
+        $property = new \ReflectionProperty($nav, 'items');
+        $items = $property->getValue($nav);
+        $items[array_key_last($items)] = $suite;
+        $property->setValue($nav, $items);
+
+        $suite->section('Settings')
             ->route('brand-context.settings.index')
             ->icon('sliders-horizontal');
     }

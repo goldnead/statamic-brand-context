@@ -1342,3 +1342,36 @@ it('does not show a single-addon page for an addon the user may not manage', fun
     expect(Arr::pluck($props['sections'], 'namespace'))->toBe(['widgets'])
         ->and($props['pageTitle'])->toBeNull();
 });
+
+it('marks the general entry active only on the general page, never beside a single-addon child', function () {
+    config()->set('zeppelin', ['label' => 'packaged']);
+    app(SettingsRegistry::class)->register(NavParentAddonSettings::class);
+
+    $items = settingsNavItems(new FakeUser('admin', 'admin@example.com', null, [
+        'manage widget settings', 'manage zeppelin settings',
+    ]), function ($nav) {
+        $nav->create('Zeppelin')->section('Tools')->url('/cp/zeppelin');
+    });
+
+    $suite = collect($items)->first(fn ($item) => $item->display() === 'Addon Suite');
+    $parent = collect($items)->first(fn ($item) => $item->display() === 'Zeppelin');
+
+    $at = function (array $query) {
+        $request = Request::create('/cp/brand-settings', 'GET', $query);
+        $request->setRouteResolver(fn () => app('router')->getRoutes()->getByName('statamic.cp.brand-context.settings.index'));
+        app()->instance('request', $request);
+    };
+
+    // Allgemeine Seite: nur der Suite-Eintrag, das Kind nicht.
+    $at([]);
+    expect($suite->isActive())->toBeTrue()
+        ->and(collect($parent->children())->first()->isActive())->toBeFalse();
+
+    $at(['section' => 'widgets']);
+    expect($suite->isActive())->toBeTrue();
+
+    // Einzelseite: nur das Kind.
+    $at(['section' => 'zeppelin']);
+    expect($suite->isActive())->toBeFalse()
+        ->and(collect($parent->children())->first()->isActive())->toBeTrue();
+});
