@@ -8,6 +8,7 @@ use Goldnead\BrandContext\Contracts\UserSource;
 use Goldnead\BrandContext\Http\Middleware\ResolveBrandFromToken;
 use Goldnead\BrandContext\Http\Middleware\SetBrandForSite;
 use Goldnead\BrandContext\Http\Middleware\SetBrandFromSession;
+use Goldnead\BrandContext\Map\MapObjectRegistry;
 use Goldnead\BrandContext\Queue\BrandOnQueue;
 use Goldnead\BrandContext\Sending\BrandSenderIdentity;
 use Goldnead\BrandContext\Settings\NavPlacement;
@@ -57,6 +58,10 @@ class ServiceProvider extends BaseServiceProvider
         // packaged-config baseline, which must be captured once before any
         // override is applied and never recaptured.
         $this->app->singleton(SettingsRegistry::class);
+
+        // Objects a map (funnels) can point at. A singleton for the same
+        // reason: it is the process's list of which addons registered one.
+        $this->app->singleton(MapObjectRegistry::class);
 
         $this->app->singleton('brand-context.settings', fn ($app) => new SettingsManager(
             $app->make(SettingsRegistry::class),
