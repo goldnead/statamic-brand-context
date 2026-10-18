@@ -345,6 +345,22 @@ public static function settingsTitle(): string
 }
 ```
 
+## Map objects (what a map can point at)
+
+An addon that wants its objects to appear on the funnels map implements
+`Goldnead\BrandContext\Contracts\ProvidesMapObjects` and registers it in `boot()`:
+
+```php
+app(\Goldnead\BrandContext\Map\MapObjectRegistry::class)->register(LeadMagnetMapObjects::class);
+```
+
+A provider answers four questions: which objects exist (`objects()`), what one object is
+(`find()`: label, Control Panel link, on/off/no switch), and its single number over a period
+(`metric()`, or `null` when the addon has none). The map stores only `type` and `id` and asks
+the owning addon every time. `MapObjectRegistry::lookup()` returns `found`, `missing` (the
+reference is dead) or `unavailable` (no provider, or it failed). A provider that throws costs its
+own card, never the screen.
+
 ## Testing
 
 ```bash

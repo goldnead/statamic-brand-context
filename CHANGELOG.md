@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 1.17.0 — 2026-10-18
+
+### Added: `ProvidesMapObjects` and `MapObjectRegistry`
+
+A shared contract so a map (the funnels map view) can point at objects in other addons without
+knowing them: `type()`, `typeLabel()`, `objects()`, `find()`, `metric()`. Value objects
+`MapObject`, `MapMetric` (value, what is counted, period), `MapPeriod`, `MapLookup`
+(found / missing / unavailable). Providers register in `boot()`; a provider that throws is
+logged and costs only its own card. No change for existing addons.
+
 ## 1.16.0 — 2026-10-17
 
 ### Changed: settings in the sidebar, next to the addon's own navigation
