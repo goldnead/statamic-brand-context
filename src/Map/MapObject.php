@@ -18,9 +18,16 @@ final class MapObject
         public readonly ?string $cpUrl = null,
         public readonly ?bool $enabled = null,
         public readonly ?string $detail = null,
+        /**
+         * Broken references the object itself carries, in words an operator can act on
+         * ("step Tag 3 sends template x, which does not exist"). Empty when all is well.
+         *
+         * @var list<string>
+         */
+        public readonly array $problems = [],
     ) {}
 
-    /** @return array{type: string, id: string, label: string, cp_url: ?string, enabled: ?bool, detail: ?string} */
+    /** @return array{type: string, id: string, label: string, cp_url: ?string, enabled: ?bool, detail: ?string, problems: list<string>} */
     public function toArray(): array
     {
         return [
@@ -30,6 +37,7 @@ final class MapObject
             'cp_url' => $this->cpUrl,
             'enabled' => $this->enabled,
             'detail' => $this->detail,
+            'problems' => array_values($this->problems),
         ];
     }
 }
