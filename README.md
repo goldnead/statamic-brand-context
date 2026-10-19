@@ -361,6 +361,13 @@ the owning addon every time. `MapObjectRegistry::lookup()` returns `found`, `mis
 reference is dead) or `unavailable` (no provider, or it failed). A provider that throws costs its
 own card, never the screen.
 
+### Map edges (what connects the objects)
+
+A provider that also implements `Goldnead\BrandContext\Contracts\ProvidesMapEdges` returns the
+connections it can read from its own data as `MapEdge` objects (`from`, `to`, `kind`, `label`,
+`derivedFrom`; `dashed` for a wait, `toLabel` when the target may be gone).
+`MapObjectRegistry::edges()` gathers them. Derive, do not guess: an edge exists because a field says so.
+
 ## Testing
 
 ```bash

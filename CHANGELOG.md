@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 1.18.0 — 2026-10-19
+
+### Added: `ProvidesMapEdges` and `MapEdge`
+
+The map can now draw connections, not only objects. A provider that also implements
+`ProvidesMapEdges` returns the edges it can derive from its own fields (`from`, `to`, `kind`,
+`label`, `derivedFrom`, optional `dashed` and `toLabel` for a target that no longer exists).
+`MapObjectRegistry::edges()` collects them from every provider, de-duplicates by key and isolates a
+failing provider. Edges are computed, never stored. No change for existing providers.
+
 ## 1.17.0 — 2026-10-18
 
 ### Added: `ProvidesMapObjects` and `MapObjectRegistry`

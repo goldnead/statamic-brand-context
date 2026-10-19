@@ -2,6 +2,7 @@
 
 namespace Goldnead\BrandContext\Map;
 
+use Goldnead\BrandContext\Contracts\ProvidesMapEdges;
 use Goldnead\BrandContext\Contracts\ProvidesMapObjects;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Facades\Log;
@@ -89,6 +90,31 @@ class MapObjectRegistry
         }
 
         return $object ? MapLookup::found($object) : MapLookup::missing();
+    }
+
+    /**
+     * Every derived edge of every provider that offers them. A provider that
+     * throws costs only its own edges.
+     *
+     * @return array<string, MapEdge> keyed by {@see MapEdge::key()}
+     */
+    public function edges(): array
+    {
+        $edges = [];
+
+        foreach (array_keys($this->providers) as $type) {
+            $list = $this->guard($type, 'edges', function (ProvidesMapObjects $p) {
+                return $p instanceof ProvidesMapEdges ? iterator_to_array($p->edges(), false) : [];
+            }) ?? [];
+
+            foreach ($list as $edge) {
+                if ($edge instanceof MapEdge) {
+                    $edges[$edge->key()] = $edge;
+                }
+            }
+        }
+
+        return $edges;
     }
 
     public function metric(string $type, string $id, MapPeriod $period): ?MapMetric
