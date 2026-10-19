@@ -12,6 +12,9 @@ The map can now draw connections, not only objects. A provider that also impleme
 `MapObjectRegistry::edges()` collects them from every provider, de-duplicates by key and isolates a
 failing provider. Edges are computed, never stored. No change for existing providers.
 
+`MapObject` gains an optional last argument `problems` (list of strings): broken references the
+object itself carries, which the map shows as a red mark on the card.
+
 ## 1.17.0 — 2026-10-18
 
 ### Added: `ProvidesMapObjects` and `MapObjectRegistry`
