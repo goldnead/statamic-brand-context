@@ -31,7 +31,17 @@ final class MapEdge
         public readonly bool $dashed = false,
         /** What was written where the target should be, shown if the target is gone. */
         public readonly ?string $toLabel = null,
+        /** Type of the provider that derived this edge. Set by the registry, not by the provider. */
+        public readonly ?string $ownerType = null,
     ) {}
+
+    public function withOwner(string $type): self
+    {
+        return new self(
+            $this->fromType, $this->fromId, $this->toType, $this->toId, $this->kind, $this->label,
+            $this->derivedFrom, $this->dashed, $this->toLabel, $type,
+        );
+    }
 
     /** Identity of the edge inside one map: the same relation twice is one line. */
     public function key(): string
@@ -53,6 +63,7 @@ final class MapEdge
             'derived_from' => $this->derivedFrom,
             'dashed' => $this->dashed,
             'to_label' => $this->toLabel,
+            'owner_type' => $this->ownerType,
         ];
     }
 }
