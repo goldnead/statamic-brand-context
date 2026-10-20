@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.19.0 — 2026-10-20
+
 ### Added: `ProvidesMapConnections`, connection rules and audit on the registry
 
 The map can now write a real connection, not only draw one. `ProvidesMapConnections` documents five
