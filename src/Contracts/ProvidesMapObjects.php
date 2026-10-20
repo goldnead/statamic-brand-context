@@ -20,6 +20,16 @@ use Goldnead\BrandContext\Map\MapPeriod;
  *
  * **A metric is optional.** An addon without a number returns null and the
  * card is shown without one. Never invent a figure to fill the slot.
+ *
+ * **Details are optional too.** A provider may add a public method (not on this interface, so older
+ * providers keep running; the registry finds it with `method_exists`):
+ *
+ *     public function details(string $id, MapPeriod $period): ?array
+ *
+ * It returns blocks for the card's panel, in the addon's own words, read only and loaded once:
+ * `['kind' => 'facts', 'title' => ?, 'rows' => [['label', 'value', 'href' => ?]]]` and
+ * `['kind' => 'list', 'title' => ?, 'items' => [['title', 'meta' => ?, 'image' => ?]], 'more' => ?]`.
+ * See {@see MapObjectRegistry::details()} for what is cleaned.
  */
 interface ProvidesMapObjects
 {
