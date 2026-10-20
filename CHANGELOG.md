@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Added: `ProvidesMapConnections`, connection rules and audit on the registry
+
+The map can now write a real connection, not only draw one. `ProvidesMapConnections` documents five
+public methods an addon adds to its existing map provider: `connectionRules()`,
+`connectionAuthorized()`, `connectionPreview()`, `connect()` and `disconnect()`, all with plain
+array signatures. The registry finds them with `method_exists`, so an addon does not reference the
+interface and keeps running against an older brand-context.
+
+`MapObjectRegistry` gains `connectionRules()` (collected per provider, a failing provider costs only
+its own rules, the first rule per from, to and kind wins), `ruleFor()`, `previewConnection()` and
+`applyConnection()` (rule, permission, preview, write, audit, and an `undo` payload). Every connect
+and disconnect is audited with who, when, what, before and after: through `statamic-activity` when
+installed, otherwise to the log. A failing audit never rolls the write back. No change for existing
+providers.
+
 ## 1.18.0 — 2026-10-19
 
 ### Added: `ProvidesMapEdges` and `MapEdge`
