@@ -14,6 +14,11 @@ providers without it, unknown ids or failures. No change for existing providers.
 `detailsAuthorized(string $id, $user): bool`. A provider that has `details()` but no
 `detailsAuthorized()` is refused, so reading details is never open by default.
 
+### Fixed: the map's period wording is translated
+
+`MapPeriod::label()` ("last 30 days") now comes from `brand-context::messages.map_period_days`, with a German
+line ("letzte 30 Tage"), instead of an untranslated JSON key.
+
 ## 1.19.0 — 2026-10-20
 
 ### Added: `ProvidesMapConnections`, connection rules and audit on the registry
