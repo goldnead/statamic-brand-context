@@ -273,6 +273,37 @@ class MapObjectRegistry
     }
 
     /**
+     * Whether this user may read the panel details of this object. A provider with `details()` must
+     * say so itself with `detailsAuthorized(string $id, $user): bool` (the right that guards the
+     * object in its own Control Panel); one that does not is refused, so a new `details()` never
+     * opens a read by accident. A provider without `details()` has nothing to protect.
+     */
+    public function detailsAllowed(string $type, string $id, $user): bool
+    {
+        if (! $this->has($type)) {
+            return false;
+        }
+
+        $provider = $this->provider($type);
+
+        if (! method_exists($provider, 'details')) {
+            return true;
+        }
+
+        if (! method_exists($provider, 'detailsAuthorized')) {
+            return false;
+        }
+
+        try {
+            return (bool) $provider->detailsAuthorized($id, $user);
+        } catch (Throwable $e) {
+            $this->report($type, 'detailsAuthorized', $e);
+
+            return false;
+        }
+    }
+
+    /**
      * What a provider shows in the card's panel beyond the one number: facts and short lists,
      * in the provider's own words. Optional: a provider without `details()` (or one that fails,
      * or does not know the id) answers null and the panel shows what it always showed.

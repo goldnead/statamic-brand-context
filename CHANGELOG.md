@@ -10,6 +10,10 @@ short lists, e.g. a course's lessons or an automation's mails). The provider add
 `method_exists`, cleans the blocks (known kinds only, at most 12 list items, safe links) and answers null for
 providers without it, unknown ids or failures. No change for existing providers.
 
+`MapObjectRegistry::detailsAllowed($type, $id, $user)` asks the provider's optional
+`detailsAuthorized(string $id, $user): bool`. A provider that has `details()` but no
+`detailsAuthorized()` is refused, so reading details is never open by default.
+
 ## 1.19.0 — 2026-10-20
 
 ### Added: `ProvidesMapConnections`, connection rules and audit on the registry

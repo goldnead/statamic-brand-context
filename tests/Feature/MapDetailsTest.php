@@ -47,6 +47,59 @@ it('hands the details of a provider through, cleaned', function () {
         ->and($blocks[1]['items'][0]['image'])->toBe('/img.png');
 });
 
+class GuardedDetailsMapProvider extends DetailsMapProvider
+{
+    public function type(): string
+    {
+        return 'guarded';
+    }
+
+    public function detailsAuthorized(string $id, $user): bool
+    {
+        return $user !== null && $user->can('see it');
+    }
+}
+
+it('asks the provider whether this user may read the details', function () {
+    $r = app(MapObjectRegistry::class);
+    $r->register(GuardedDetailsMapProvider::class);
+    $yes = new class
+    {
+        public function can($p)
+        {
+            return true;
+        }
+    };
+    $no = new class
+    {
+        public function can($p)
+        {
+            return false;
+        }
+    };
+
+    expect($r->detailsAllowed('guarded', 'a', $yes))->toBeTrue()
+        ->and($r->detailsAllowed('guarded', 'a', $no))->toBeFalse()
+        ->and($r->detailsAllowed('guarded', 'a', null))->toBeFalse();
+});
+
+it('refuses details of a provider that has details() but no authorization, and allows one without details', function () {
+    $r = app(MapObjectRegistry::class);
+    $r->register(DetailsMapProvider::class);
+    $r->register(FakeMapProvider::class);
+    $user = new class
+    {
+        public function can($p)
+        {
+            return true;
+        }
+    };
+
+    expect($r->detailsAllowed('rich', 'a', $user))->toBeFalse()
+        ->and($r->detailsAllowed('fake', 'a', $user))->toBeTrue()
+        ->and($r->detailsAllowed('absent', 'a', $user))->toBeFalse();
+});
+
 it('answers null for providers without details, unknown ids, failures and absent types', function () {
     $r = app(MapObjectRegistry::class);
     $r->register(DetailsMapProvider::class);
