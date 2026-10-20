@@ -1,10 +1,12 @@
 <?php
 
 use Goldnead\BrandContext\Contracts\ProvidesMapObjects;
+use Goldnead\BrandContext\Map\ConnectionConflict;
 use Goldnead\BrandContext\Map\MapMetric;
 use Goldnead\BrandContext\Map\MapObject;
 use Goldnead\BrandContext\Map\MapObjectRegistry;
 use Goldnead\BrandContext\Map\MapPeriod;
+use Goldnead\IdentityContracts\Identity;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -309,7 +311,7 @@ it('writes, audits through the activity facade and offers the undo', function ()
     [$event, $attributes] = FakeActivityFacade::$recorded[0];
 
     expect($event)->toBe('map.connection_made')
-        ->and($attributes['actor'])->toBeInstanceOf(Goldnead\IdentityContracts\Identity::class)
+        ->and($attributes['actor'])->toBeInstanceOf(Identity::class)
         ->and($attributes['actor']->id)->toBe('u1')
         ->and($attributes['properties']['user_id'])->toBe('u1')
         ->and(json_encode($attributes))->not->toContain('ada@example.test')->not->toContain('Ada')
@@ -357,7 +359,7 @@ it('refuses a preview for a user who may not write it', function () {
 
 it('writes nothing and says so when the field changed since the user confirmed', function () {
     expect(fn () => connRegistry()->applyConnection(CONN, 'connect', connUser(), 'something-else'))
-        ->toThrow(Goldnead\BrandContext\Map\ConnectionConflict::class);
+        ->toThrow(ConnectionConflict::class);
 
     expect(ConnProvider::$links)->toBe([])
         ->and(DB::table('map_connection_audits')->count())->toBe(0);
