@@ -31,7 +31,9 @@ interface ProvidesMapConnections
     public function connectionRules(): array;
 
     /**
-     * May this user write it? `$user` is a Statamic user or null.
+     * May this user write it? `$user` is a Statamic user or null. Check BOTH
+     * ends: the permission to edit the source and the one to edit the target.
+     * The registry asks this for the preview as well as for the write.
      *
      * @param  array{from_type: string, from_id: string, to_type: string, to_id: string, kind: string}  $c
      */
@@ -49,7 +51,9 @@ interface ProvidesMapConnections
     public function connectionPreview(array $c, string $action): array;
 
     /**
-     * Writes for real (re-checks with connectionPreview itself).
+     * Writes for real. Re-reads the field and re-checks with connectionPreview
+     * right before it writes (compare and set): when the field is no longer
+     * what the user saw, throw a DomainException and write nothing.
      *
      * @param  array{from_type: string, from_id: string, to_type: string, to_id: string, kind: string}  $c
      * @return array{before: string, after: string}
@@ -57,10 +61,13 @@ interface ProvidesMapConnections
     public function connect(array $c): array;
 
     /**
-     * Undoes exactly what connect() wrote.
+     * Undoes exactly what connect() wrote. When the removed thing is more than
+     * a value (a row with its own id, position and fields), return it as
+     * `restore`: the map hands it back to connect() as `$c['restore']` when the
+     * user undoes, and connect() puts back exactly that.
      *
      * @param  array{from_type: string, from_id: string, to_type: string, to_id: string, kind: string}  $c
-     * @return array{before: string, after: string}
+     * @return array{before: string, after: string, restore?: array<string, mixed>}
      */
     public function disconnect(array $c): array;
 }

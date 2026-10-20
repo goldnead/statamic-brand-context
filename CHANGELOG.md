@@ -17,6 +17,20 @@ and disconnect is audited with who, when, what, before and after: through `stata
 installed, otherwise to the log. A failing audit never rolls the write back. No change for existing
 providers.
 
+`previewConnection()` now takes the user and refuses with `AuthorizationException` like the write
+does. `applyConnection()` takes the `before` the user confirmed and throws `ConnectionConflict` (a
+`DomainException`, nothing written) when the field has changed since. A disconnect may return
+`restore` (what it removed); the undo carries it back into `connect()` so the exact thing returns.
+`MapEdge` gains `ownerType` (the provider that derived it) so the map offers "release" only to the
+owner of the line. The audit keeps only the user id (no email, no name): into `statamic-activity`
+with a real `Identity` as actor, or, when that is not installed or keeps nothing, into the new
+`map_connection_audits` table (run `php artisan migrate`).
+
+**Merge order of the map stack:** brand-context (this) first, then the funnels map part 1, then the
+addons (lead-magnets, offers, automations, products, marketing), funnels last. The addons need this
+release (>= 1.19) for connections; they check `method_exists` and show no connection handles on an
+older brand-context.
+
 ## 1.18.0 — 2026-10-19
 
 ### Added: `ProvidesMapEdges` and `MapEdge`

@@ -7,6 +7,7 @@ use Goldnead\BrandContext\Contracts\ProvidesMapEdges;
 use Goldnead\BrandContext\Contracts\ProvidesMapObjects;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use Throwable;
@@ -111,7 +112,7 @@ class MapObjectRegistry
 
             foreach ($list as $edge) {
                 if ($edge instanceof MapEdge) {
-                    $edges[$edge->key()] = $edge;
+                    $edges[$edge->key()] = $edge->withOwner($type);
                 }
             }
         }
@@ -175,19 +176,28 @@ class MapObjectRegistry
     }
 
     /**
-     * What a connect or disconnect would do, in plain words.
+     * What a connect or disconnect would do, in plain words. Asks the same
+     * permission question as {@see applyConnection()}: the preview names the
+     * objects and the effect, so it is not for anyone who may not write it.
      *
-     * @param  array<string, string>  $c  from_type, from_id, to_type, to_id, optional kind
+     * @param  array<string, mixed>  $c  from_type, from_id, to_type, to_id, optional kind
+     * @param  mixed  $user  Statamic user or null
      * @return array{kind: string, consequence: string, before: string, after: string}
      *
      * @throws InvalidArgumentException unknown pair or action
+     * @throws AuthorizationException the user may not write it
      * @throws \DomainException the provider says it is not possible (passed through)
      */
-    public function previewConnection(array $c, string $action): array
+    public function previewConnection(array $c, string $action, $user): array
     {
         [$rule, $c] = $this->ruleAndConnection($c, $action);
+        $provider = $this->connectionProvider($rule['owner']);
 
-        $preview = $this->connectionProvider($rule['owner'])->connectionPreview($c, $action);
+        if (! $provider->connectionAuthorized($c, $user)) {
+            throw new AuthorizationException;
+        }
+
+        $preview = $provider->connectionPreview($c, $action);
 
         return [
             'kind' => $c['kind'],
@@ -200,15 +210,21 @@ class MapObjectRegistry
     /**
      * Writes a connection: rule, permission, preview, write, audit.
      *
-     * @param  array<string, string>  $c
+     * Compare and set: `$expectedBefore` is the `before` the user was shown
+     * and confirmed. When the field says something else by now (a second tab,
+     * a second user) nothing is written and a {@see ConnectionConflict} says
+     * so. The provider re-reads the field again right before it writes.
+     *
+     * @param  array<string, mixed>  $c
      * @param  mixed  $user  Statamic user or null
-     * @return array{kind: string, consequence: string, before: string, after: string, undo: array<string, string>}
+     * @return array{kind: string, consequence: string, before: string, after: string, undo: array<string, mixed>}
      *
      * @throws InvalidArgumentException unknown pair or action
      * @throws AuthorizationException the user may not write it
+     * @throws ConnectionConflict the field is no longer what the user confirmed
      * @throws \DomainException not possible right now
      */
-    public function applyConnection(array $c, string $action, $user): array
+    public function applyConnection(array $c, string $action, $user, ?string $expectedBefore = null): array
     {
         [$rule, $c] = $this->ruleAndConnection($c, $action);
         $provider = $this->connectionProvider($rule['owner']);
@@ -218,6 +234,10 @@ class MapObjectRegistry
         }
 
         $preview = $provider->connectionPreview($c, $action);
+
+        if ($expectedBefore !== null && (string) ($preview['before'] ?? '') !== $expectedBefore) {
+            throw new ConnectionConflict("Expected [{$expectedBefore}], found [".($preview['before'] ?? '').'].');
+        }
 
         try {
             $written = $action === 'connect' ? $provider->connect($c) : $provider->disconnect($c);
@@ -236,7 +256,13 @@ class MapObjectRegistry
 
         $this->audit($action, $c, $result, $user);
 
+        unset($c['restore']);
         $result['undo'] = ['action' => $action === 'connect' ? 'disconnect' : 'connect'] + $c;
+
+        // What disconnect() removed, so the undo can put back the exact thing.
+        if (isset($written['restore']) && is_array($written['restore'])) {
+            $result['undo']['restore'] = $written['restore'];
+        }
 
         return $result;
     }
@@ -264,13 +290,20 @@ class MapObjectRegistry
             throw new InvalidArgumentException("Map pair [{$from}] to [{$to}] cannot be connected.");
         }
 
-        return [$rule, [
+        $connection = [
             'from_type' => $from,
             'from_id' => (string) ($c['from_id'] ?? ''),
             'to_type' => $to,
             'to_id' => (string) ($c['to_id'] ?? ''),
             'kind' => (string) ($c['kind'] ?? $rule['kind']),
-        ]];
+        ];
+
+        // Only a connect that undoes a disconnect carries it: the exact thing the disconnect removed.
+        if ($action === 'connect' && isset($c['restore']) && is_array($c['restore'])) {
+            $connection['restore'] = $c['restore'];
+        }
+
+        return [$rule, $connection];
     }
 
     /** The audit facade of statamic-activity, or null when that addon is not installed. */
@@ -282,8 +315,11 @@ class MapObjectRegistry
     }
 
     /**
-     * Who, when, what, before and after. A failing audit is reported and
-     * never undoes the write nor kills the request.
+     * Who, when, what, before and after. Through statamic-activity when it is
+     * installed and keeps the row, otherwise into the `map_connection_audits`
+     * table, which outlives any log rotation. Only the user id is kept, never
+     * an email or a name. A failing audit is reported and never undoes the
+     * write nor kills the request.
      *
      * @param  array<string, string>  $c
      * @param  array<string, string>  $result
@@ -291,13 +327,9 @@ class MapObjectRegistry
     protected function audit(string $action, array $c, array $result, $user): void
     {
         $event = $action === 'connect' ? 'map.connection_made' : 'map.connection_removed';
-        $who = [
-            'id' => $user && method_exists($user, 'id') ? (string) $user->id() : null,
-            'email' => $user && method_exists($user, 'email') ? (string) $user->email() : null,
-            'name' => $user && method_exists($user, 'name') ? (string) $user->name() : null,
-        ];
+        $userId = $user && method_exists($user, 'id') && $user->id() !== null ? (string) $user->id() : null;
         $facts = [
-            'user' => $who,
+            'user_id' => $userId,
             'at' => now()->toIso8601String(),
             'from_type' => $c['from_type'],
             'from_id' => $c['from_id'],
@@ -309,16 +341,47 @@ class MapObjectRegistry
             'after' => $result['after'],
         ];
 
+        $kept = false;
+
         try {
             $facade = $this->activityFacade();
 
             if ($facade !== null) {
-                $facade::record($event, ['actor' => $user, 'properties' => $facts]);
-            } else {
-                Log::info($event, $facts);
+                // `actor` is a typed Identity in statamic-activity, never a Statamic user.
+                $identity = 'Goldnead\\IdentityContracts\\Identity';
+                $attributes = ['properties' => $facts, 'user_id' => $userId];
+
+                if ($userId !== null && class_exists($identity)) {
+                    $attributes['actor'] = $identity::user($userId);
+                }
+
+                $kept = $facade::record($event, $attributes) !== null;
             }
         } catch (Throwable $e) {
             Log::warning("Map audit [{$event}] failed: {$e->getMessage()}", ['exception' => $e]);
+        }
+
+        if ($kept) {
+            return;
+        }
+
+        try {
+            DB::table('map_connection_audits')->insert([
+                'event' => $event,
+                'user_id' => $userId,
+                'from_type' => $c['from_type'],
+                'from_id' => $c['from_id'],
+                'to_type' => $c['to_type'],
+                'to_id' => $c['to_id'],
+                'kind' => $c['kind'],
+                'consequence' => $result['consequence'],
+                'before' => $result['before'],
+                'after' => $result['after'],
+                'created_at' => now(),
+            ]);
+        } catch (Throwable $e) {
+            // The table is missing (migration not run) or the database is down: the log is the last record.
+            Log::error("Map audit [{$event}] could not be stored: {$e->getMessage()}", $facts);
         }
     }
 

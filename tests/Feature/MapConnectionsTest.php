@@ -6,7 +6,10 @@ use Goldnead\BrandContext\Map\MapObject;
 use Goldnead\BrandContext\Map\MapObjectRegistry;
 use Goldnead\BrandContext\Map\MapPeriod;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+
+require_once __DIR__.'/../Fixtures/IdentityStub.php';
 
 class ConnPlainProvider implements ProvidesMapObjects
 {
@@ -44,6 +47,9 @@ class ConnProvider extends ConnPlainProvider
     public static bool $allowed = true;
 
     public static bool $audit = true;
+
+    /** @var array<string, mixed>|null what a disconnect removed and returns for the undo */
+    public static ?array $restore = null;
 
     public function type(): string
     {
@@ -87,7 +93,7 @@ class ConnProvider extends ConnPlainProvider
         $this->connectionPreview($c, 'disconnect');
         unset(self::$links[$c['from_id']]);
 
-        return ['before' => $c['to_id'], 'after' => ''];
+        return ['before' => $c['to_id'], 'after' => ''] + (self::$restore !== null ? ['restore' => self::$restore] : []);
     }
 }
 
@@ -138,21 +144,35 @@ class ConnBrokenWriteProvider extends ConnProvider
     }
 }
 
+/**
+ * Holds the same line the real statamic-activity does: `ActivityData::$actor`
+ * is `?Identity`, so a Statamic user as actor is a TypeError there.
+ */
 class FakeActivityFacade
 {
     public static array $recorded = [];
 
     public static bool $throws = false;
 
-    public static function record(string $eventType, array $attributes = []): null
+    /** What record() returns: null is "disabled or dropped by the sanitizer". */
+    public static ?object $returns = null;
+
+    public static function record(string $eventType, array $attributes = []): ?object
     {
         if (self::$throws) {
             throw new RuntimeException('activity down');
         }
 
+        $actor = $attributes['actor'] ?? null;
+        $identity = 'Goldnead\\IdentityContracts\\Identity';
+
+        if ($actor !== null && class_exists($identity) && ! $actor instanceof $identity) {
+            throw new TypeError('actor must be an Identity, got '.get_debug_type($actor));
+        }
+
         self::$recorded[] = [$eventType, $attributes];
 
-        return null;
+        return self::$returns;
     }
 }
 
@@ -208,6 +228,8 @@ beforeEach(function () {
     ConnProvider::$allowed = true;
     FakeActivityFacade::$recorded = [];
     FakeActivityFacade::$throws = false;
+    FakeActivityFacade::$returns = new stdClass;
+    ConnProvider::$restore = null;
 });
 
 const CONN = ['from_type' => 'owner', 'from_id' => 'a', 'to_type' => 'target', 'to_id' => 'b'];
@@ -246,7 +268,7 @@ it('finds the one rule for a pair', function () {
 });
 
 it('previews with the kind filled in from the rule', function () {
-    $preview = connRegistry()->previewConnection(CONN, 'connect');
+    $preview = connRegistry()->previewConnection(CONN, 'connect', connUser());
 
     expect($preview)->toBe(['kind' => 'triggers', 'consequence' => 'connect a to b', 'before' => '', 'after' => 'b']);
 });
@@ -254,15 +276,15 @@ it('previews with the kind filled in from the rule', function () {
 it('rejects an unknown pair or action with InvalidArgumentException', function () {
     $registry = connRegistry();
 
-    expect(fn () => $registry->previewConnection(['to_type' => 'owner', 'from_type' => 'target'] + CONN, 'connect'))
+    expect(fn () => $registry->previewConnection(['to_type' => 'owner', 'from_type' => 'target'] + CONN, 'connect', connUser()))
         ->toThrow(InvalidArgumentException::class);
-    expect(fn () => $registry->previewConnection(CONN, 'explode'))->toThrow(InvalidArgumentException::class);
+    expect(fn () => $registry->previewConnection(CONN, 'explode', connUser()))->toThrow(InvalidArgumentException::class);
     expect(fn () => $registry->applyConnection(['to_type' => 'nope'] + CONN, 'connect', connUser()))
         ->toThrow(InvalidArgumentException::class);
 });
 
 it('passes the DomainException of the provider through', function () {
-    expect(fn () => connRegistry()->previewConnection(CONN, 'disconnect'))
+    expect(fn () => connRegistry()->previewConnection(CONN, 'disconnect', connUser()))
         ->toThrow(DomainException::class, 'Not connected.');
 });
 
@@ -287,8 +309,10 @@ it('writes, audits through the activity facade and offers the undo', function ()
     [$event, $attributes] = FakeActivityFacade::$recorded[0];
 
     expect($event)->toBe('map.connection_made')
-        ->and($attributes['actor'])->not->toBeNull()
-        ->and($attributes['properties']['user'])->toBe(['id' => 'u1', 'email' => 'ada@example.test', 'name' => 'Ada'])
+        ->and($attributes['actor'])->toBeInstanceOf(Goldnead\IdentityContracts\Identity::class)
+        ->and($attributes['actor']->id)->toBe('u1')
+        ->and($attributes['properties']['user_id'])->toBe('u1')
+        ->and(json_encode($attributes))->not->toContain('ada@example.test')->not->toContain('Ada')
         ->and($attributes['properties']['from_type'])->toBe('owner')
         ->and($attributes['properties']['to_id'])->toBe('b')
         ->and($attributes['properties']['kind'])->toBe('triggers')
@@ -298,14 +322,65 @@ it('writes, audits through the activity facade and offers the undo', function ()
         ->and($attributes['properties']['at'])->toBeString();
 });
 
-it('falls back to the log when statamic-activity is not installed', function () {
-    Log::spy();
-
+it('stores the audit in a table when statamic-activity is not installed, with the user id only', function () {
     connRegistry()->applyConnection(CONN, 'connect', connUser());
 
-    Log::shouldHaveReceived('info')->withArgs(fn ($message, $context) => $message === 'map.connection_made'
-        && $context['user']['email'] === 'ada@example.test'
-        && $context['after'] === 'b')->once();
+    $row = DB::table('map_connection_audits')->first();
+
+    expect($row->event)->toBe('map.connection_made')
+        ->and($row->user_id)->toBe('u1')
+        ->and([$row->from_type, $row->from_id, $row->to_type, $row->to_id, $row->kind])->toBe(['owner', 'a', 'target', 'b', 'triggers'])
+        ->and($row->after)->toBe('b')
+        ->and(json_encode($row))->not->toContain('ada@example.test')->not->toContain('Ada');
+});
+
+it('stores the audit in the table too when activity keeps nothing (disabled or dropped)', function () {
+    FakeActivityFacade::$returns = null;
+
+    connRegistry(RegistryWithActivity::class)->applyConnection(CONN, 'connect', connUser());
+
+    expect(DB::table('map_connection_audits')->count())->toBe(1);
+});
+
+it('does not store a second audit row when activity kept the record', function () {
+    connRegistry(RegistryWithActivity::class)->applyConnection(CONN, 'connect', connUser());
+
+    expect(DB::table('map_connection_audits')->count())->toBe(0);
+});
+
+it('refuses a preview for a user who may not write it', function () {
+    ConnProvider::$allowed = false;
+
+    expect(fn () => connRegistry()->previewConnection(CONN, 'connect', connUser()))
+        ->toThrow(AuthorizationException::class);
+});
+
+it('writes nothing and says so when the field changed since the user confirmed', function () {
+    expect(fn () => connRegistry()->applyConnection(CONN, 'connect', connUser(), 'something-else'))
+        ->toThrow(Goldnead\BrandContext\Map\ConnectionConflict::class);
+
+    expect(ConnProvider::$links)->toBe([])
+        ->and(DB::table('map_connection_audits')->count())->toBe(0);
+
+    // The value the user was shown goes through.
+    connRegistry()->applyConnection(CONN, 'connect', connUser(), '');
+    expect(ConnProvider::$links)->toBe(['a' => 'b']);
+});
+
+it('hands what a disconnect removed to the undo and strips it from the undo of the undo', function () {
+    $registry = connRegistry();
+    $registry->applyConnection(CONN, 'connect', connUser());
+    ConnProvider::$restore = ['id' => 'row-1', 'place' => 'start'];
+
+    $removed = $registry->applyConnection(CONN, 'disconnect', connUser());
+
+    expect($removed['undo'])->toEqual(['action' => 'connect', 'kind' => 'triggers', 'restore' => ['id' => 'row-1', 'place' => 'start']] + CONN);
+
+    $undo = $removed['undo'];
+    unset($undo['action']);
+    $again = $registry->applyConnection($undo, 'connect', connUser());
+
+    expect($again['undo'])->not->toHaveKey('restore');
 });
 
 it('detects the real activity facade by class_exists', function () {
