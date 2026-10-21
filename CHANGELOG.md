@@ -8,7 +8,10 @@
 through a map without doing anything: no mail, no job, no event, no write. It starts at the objects nothing
 points at, asks the owning addon what it would do, hands events on along the map's connections, adds the fork
 after every mail (opened, clicked, bought, nothing), merges alternatives that lead to the same place and caps
-the tree (400 nodes, "n more ways"). Cards no path reaches are reported in `stats.unreached`.
+the tree (400 nodes, "n more ways"). Cards no path reaches are reported in `stats.unreached`. A hand-drawn note
+and a `waits_for` line are not ways a person can take and are not followed; a call that names its receiver is
+followed even when the map does not show the receiver (`meta.off_map`); a loop of calls begins where its own
+provider says it begins and stops at the second visit.
 
 Two optional provider halves, found with `method_exists` like `details()`, so no existing provider changes:
 

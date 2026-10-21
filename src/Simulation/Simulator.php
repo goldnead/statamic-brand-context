@@ -37,6 +37,9 @@ class Simulator
     /** Most products offered in the "bought" fork of one mail. */
     public const MAX_PURCHASES = 4;
 
+    /** Edge kinds that are not a way a person can take. */
+    public const NOT_A_WAY = ['waits_for', 'hand'];
+
     private int $budget = self::MAX_NODES;
 
     private int $cut = 0;
@@ -97,8 +100,9 @@ class Simulator
             $from = $e['from_type'].':'.$e['from_id'];
             $to = $e['to_type'].':'.$e['to_id'];
 
-            // "waits for" is a dashed line, not a hand-over of people: whoever waits starts on her own.
-            if (! isset($this->present[$from], $this->present[$to]) || $from === $to || $e['kind'] === 'waits_for') {
+            // "waits for" is a dashed line, not a hand-over of people: whoever waits starts on her own. A
+            // hand-drawn line is a note of the operator, not a connection: nobody walks along a note.
+            if (! isset($this->present[$from], $this->present[$to]) || $from === $to || in_array($e['kind'], self::NOT_A_WAY, true)) {
                 continue;
             }
 
@@ -107,6 +111,7 @@ class Simulator
         }
 
         $roots = [];
+        $left = 0;
 
         foreach ($nodes as $n) {
             $key = $n['type'].':'.$n['id'];
@@ -124,12 +129,52 @@ class Simulator
             }
 
             foreach ($events as $event) {
+                if (! $this->room()) {
+                    $left++;
+
+                    continue;
+                }
+
                 $node = $this->enter($n['type'], (string) $n['id'], $event, $this->context());
 
                 if ($node !== null) {
                     $roots[] = $node;
                 }
             }
+        }
+
+        // Cards with a connection pointing at them that no path has reached (two automations that call
+        // each other, an automation with its own trigger that is also fed by a card that said nothing)
+        // still begin where their own provider says they begin.
+        foreach ($nodes as $n) {
+            $key = $n['type'].':'.$n['id'];
+
+            if (isset($this->entered[$key]) || ! isset($incoming[$key])) {
+                continue;
+            }
+
+            $event = $this->registry->paths($n['type'], (string) $n['id'])[0] ?? null;
+
+            if ($event === null) {
+                continue;
+            }
+
+            if (! $this->room()) {
+                $left++;
+
+                continue;
+            }
+
+            $node = $this->enter($n['type'], (string) $n['id'], $event, $this->context());
+
+            if ($node !== null) {
+                $roots[] = $node;
+            }
+        }
+
+        if ($left > 0) {
+            $this->cut += $left;
+            $roots[] = $this->more($left, 0);
         }
 
         $counter = 0;
@@ -437,11 +482,9 @@ class Simulator
         $targets = [];
 
         if ($event->target !== null) {
-            $key = $event->target['type'].':'.$event->target['id'];
-
-            if (isset($this->present[$key])) {
-                $targets[$key] = [$event->target['type'], $event->target['id'], null];
-            }
+            // A call names its receiver: it is entered even when the map does not show it, because the
+            // call is real. Whoever may not see it is told so by the receiver's own right.
+            $targets[$event->target['type'].':'.$event->target['id']] = [$event->target['type'], $event->target['id'], null];
         } elseif ($from !== null) {
             foreach ($this->out[$from] ?? [] as $edge) {
                 if ($event->via !== [] && ! in_array($edge['kind'], $event->via, true)) {
@@ -469,6 +512,10 @@ class Simulator
             $node = $this->enter($type, $id, $arrives, $ctx, $kind);
 
             if ($node !== null) {
+                if (! isset($this->present[$type.':'.$id])) {
+                    $node['meta']['off_map'] = true;
+                }
+
                 $nodes[] = $node;
             }
         }

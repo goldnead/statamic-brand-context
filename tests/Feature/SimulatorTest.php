@@ -378,6 +378,78 @@ it('writes nothing, sends nothing, dispatches nothing', function () {
     expect($writes)->toBe([]);
 });
 
+/** An object that calls another one by name: `a` calls `b`, `b` calls `a`, `x` calls an object the map does not show. */
+class SimCaller extends SimFakeProvider
+{
+    public function type(): string
+    {
+        return 'caller';
+    }
+
+    public function paths(string $id): array
+    {
+        return [new SimEvent(SimEvent::STARTED)];
+    }
+
+    public function react(string $id, SimEvent $event, SimPerson $person, CarbonImmutable $at): array
+    {
+        $callee = ['a' => 'b', 'b' => 'a', 'x' => 'off'][$id] ?? null;
+
+        return $callee === null ? [Effect::mail("Mail of $id")] : [Effect::emit(new SimEvent(SimEvent::ENTERED, target: ['type' => 'caller', 'id' => $callee]))];
+    }
+}
+
+it('starts a loop of calls where its own provider says it begins, and stops it at the second visit', function () {
+    $sim = simSetUp();
+    app(MapObjectRegistry::class)->register(SimCaller::class);
+
+    $tree = $sim->tree(
+        [simNode('caller', 'a'), simNode('caller', 'b')],
+        [simEdge('caller:a', 'caller:b', 'starts'), simEdge('caller:b', 'caller:a', 'starts')],
+    );
+
+    expect(simFlat($tree['roots']))->toBe(['enter:CALLER a', 'enter:CALLER b', 'rejoin:CALLER a is already running on this path'])
+        ->and($tree['stats']['unreached'])->toBe([]);
+});
+
+it('follows a call to an object the map does not show, and says so', function () {
+    $sim = simSetUp();
+    app(MapObjectRegistry::class)->register(SimCaller::class);
+
+    $tree = $sim->tree([simNode('caller', 'x')], []);
+
+    expect(simFlat($tree['roots']))->toBe(['enter:CALLER x', 'enter:CALLER off', 'mail:Mail of off', 'fork:After this mail', 'alt:opened · clicked · nothing: the sequence goes on'])
+        ->and($tree['roots'][0]['children'][0]['meta']['off_map'])->toBeTrue();
+});
+
+it('does not walk along a hand-drawn note', function () {
+    $sim = simSetUp();
+
+    $tree = $sim->tree(
+        [simNode('lead_magnet', 'lm'), simNode('automation', 'a')],
+        [simEdge('lead_magnet:lm', 'automation:a', 'hand')],
+    );
+
+    expect(simFlat($tree['roots']))->not->toContain('enter:AUTOMATION a')
+        ->and($tree['stats']['unreached'])->toBe(['automation:a']);
+});
+
+it('says how many starts it could not make when the budget is spent', function () {
+    $sim = simSetUp();
+    $nodes = [];
+
+    foreach (range(1, 300) as $i) {
+        $nodes[] = simNode('product', "p$i");
+    }
+
+    $tree = $sim->tree($nodes, []);
+    $last = end($tree['roots']);
+
+    expect($last['kind'])->toBe('more')
+        ->and($tree['stats']['cut'])->toBeGreaterThan(0)
+        ->and($last['meta']['ways'])->toBe(300 - (count($tree['roots']) - 1));
+});
+
 it('keeps a known person immutable and answers for her', function () {
     $p = SimPerson::known(['tag' => 'chor'], ['kurs']);
     $q = $p->withAccess('masterclass')->withTrait('tag', 'solo')->withRun('welcome');
