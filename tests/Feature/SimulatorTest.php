@@ -513,7 +513,7 @@ it('shows the alternatives of a provider that forks anyway in the one line of a 
     );
 
     expect(array_map(fn ($e) => $e['kind'].':'.$e['label'], $timeline['entries']))->toContain('fork:Tag?')
-        ->toContain('alt:A: yes')
+        ->toContain('alt:A: yes · B: yes')
         ->toContain('alt:C: no');
 });
 
