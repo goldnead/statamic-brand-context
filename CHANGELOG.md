@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.26.0 — 2026-10-21
+
 ### Added: `PersonSources::describe()`, which sources did not speak
 
 `describe($key, $user)` returns the person and `missing`: the sources this user may not read and the ones that failed. A copy that is silent about a
