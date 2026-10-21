@@ -97,7 +97,8 @@ class Simulator
             $from = $e['from_type'].':'.$e['from_id'];
             $to = $e['to_type'].':'.$e['to_id'];
 
-            if (! isset($this->present[$from], $this->present[$to]) || $from === $to) {
+            // "waits for" is a dashed line, not a hand-over of people: whoever waits starts on her own.
+            if (! isset($this->present[$from], $this->present[$to]) || $from === $to || $e['kind'] === 'waits_for') {
                 continue;
             }
 
@@ -188,7 +189,7 @@ class Simulator
         $label = $this->labelOf($type, $id);
         $node = $this->node('enter', $label['label'], $label['type_label'], $ctx['at'], 0, ['type' => $type, 'id' => $id], ['event' => $event->type, 'edge' => $edgeKind]);
 
-        if (! $this->registry->simulationAllowed($type, $id, $this->user)) {
+        if ($this->registry->has($type) && ! $this->registry->simulationAllowed($type, $id, $this->user)) {
             $node['children'][] = $this->leaf('denied', __('brand-context::messages.sim_denied'), $ctx['at']);
 
             return $node;
