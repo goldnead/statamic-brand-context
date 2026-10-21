@@ -371,6 +371,7 @@ it('writes nothing, sends nothing, dispatches nothing', function () {
         SimPerson::unknown(),
     );
     $sim->starts([simNode('lead_magnet', 'lm')], []);
+    $sim->timeline([simNode('product', 'p'), simNode('automation', 'a')], [simEdge('product:p', 'automation:a')], ['type' => 'product', 'id' => 'p', 'event' => 'purchased'], SimPerson::known());
     $sim->timeline([simNode('lead_magnet', 'lm'), simNode('automation', 'a')], [simEdge('lead_magnet:lm', 'automation:a')], ['type' => 'lead_magnet', 'id' => 'lm', 'event' => 'requested'], SimPerson::known());
 
     Mail::assertNothingSent();
@@ -498,6 +499,22 @@ it('walks one known person along one line: no fork, the clock in days', function
     ])
         ->and($timeline['entries'][4]['at'])->toBe(2 * 86400)
         ->and($timeline['stats'])->toBe(['entries' => 6, 'days' => [0, 2], 'cut' => 0]);
+});
+
+it('shows the alternatives of a provider that forks anyway in the one line of a known person', function () {
+    $sim = simSetUp();
+    app(MapObjectRegistry::class)->register(SimForkStarter::class);
+
+    $timeline = $sim->timeline(
+        [simNode('forkstart', 's'), simNode('automation', 'fork')],
+        [simEdge('forkstart:s', 'automation:fork', 'starts')],
+        ['type' => 'forkstart', 'id' => 's', 'event' => 'started'],
+        SimPerson::known(),
+    );
+
+    expect(array_map(fn ($e) => $e['kind'].':'.$e['label'], $timeline['entries']))->toContain('fork:Tag?')
+        ->toContain('alt:A: yes · B: yes')
+        ->toContain('alt:C: no');
 });
 
 it('keeps a known person immutable and answers for her', function () {

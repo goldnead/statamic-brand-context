@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added: the dry run for one known person
+
+- `Simulator::starts($nodes, $edges)`: where a way can begin on the map (every object nothing points at, with the event
+  its provider names; an object with no entry but a connection leading on begins with `started`).
+- `Simulator::timeline($nodes, $edges, $start, $person, $user)`: what happens to one known person from one start, every
+  effect in the order it happens with the day it falls on. A known person has an answer for every condition, so there is
+  no fork after a mail and the providers decide instead of branching; what a provider cannot decide it says as
+  "effect unknown". A provider that forks anyway shows its alternatives in the one line.
+- `Effect::DECISION` (`Effect::decision($question, $answer, $children)`): the way a known person took at a question, and why.
+
 ## 1.21.0 — 2026-10-21
 
 ### Added: dry run ("Probelauf") planner on the map
