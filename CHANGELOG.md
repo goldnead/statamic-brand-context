@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.20.0 — 2026-10-21
+
 ### Added: optional `details()` on map providers
 
 `MapObjectRegistry::details($type, $id, $period)` asks a provider for richer panel content (facts and
