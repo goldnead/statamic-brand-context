@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.22.0 — 2026-10-21
+
 ### Added: the dry run for one known person
 
 - `Simulator::starts($nodes, $edges)`: where a way can begin on the map (every object nothing points at, with the event
