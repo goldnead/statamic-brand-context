@@ -297,7 +297,8 @@ class Simulator
         $flatten($root === null ? [] : [$root], []);
 
         // She unsubscribed at some moment: the marketing mails after it do not go out, on whatever branch they stand.
-        $unsubscribedAt = null;
+        // A person who already asked not to be written to (copied from the CRM) did so before the way began.
+        $unsubscribedAt = $person->trait('marketing.unsubscribed') === true ? -1 : null;
 
         foreach ($entries as $entry) {
             if ($entry['kind'] === 'action' && ($entry['meta']['action'] ?? null) === SimAction::UNSUBSCRIBE) {

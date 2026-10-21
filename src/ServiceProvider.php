@@ -16,6 +16,7 @@ use Goldnead\BrandContext\Settings\SettingsManager;
 use Goldnead\BrandContext\Settings\SettingsNavChild;
 use Goldnead\BrandContext\Settings\SettingsNavSuite;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
+use Goldnead\BrandContext\Simulation\PersonSources;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Event;
@@ -62,6 +63,9 @@ class ServiceProvider extends BaseServiceProvider
         // Objects a map (funnels) can point at. A singleton for the same
         // reason: it is the process's list of which addons registered one.
         $this->app->singleton(MapObjectRegistry::class);
+
+        // Places the dry run can copy a real person from (the CRM, access, automations).
+        $this->app->singleton(PersonSources::class);
 
         $this->app->singleton('brand-context.settings', fn ($app) => new SettingsManager(
             $app->make(SettingsRegistry::class),
