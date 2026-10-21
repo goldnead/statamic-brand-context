@@ -77,6 +77,17 @@ class PersonSources
      */
     public function state(string $key, $user): ?SimPerson
     {
+        return $this->describe($key, $user)['person'] ?? null;
+    }
+
+    /**
+     * The same, and which sources did not speak: the ones this user may not read and the ones that failed. A copy
+     * that is silent about a part reads as "she has no access", where the truth is "not read": the screen says so.
+     *
+     * @return array{person: SimPerson, missing: list<string>}|null
+     */
+    public function describe(string $key, $user): ?array
+    {
         [$origin, $own] = array_pad(explode('|', $key, 2), 2, '');
 
         if ($own === '' || ! isset($this->sources[$origin])) {
@@ -92,11 +103,15 @@ class PersonSources
         $traits = [];
         $access = [];
         $ran = [];
+        $missing = [];
 
         foreach (array_keys($this->sources) as $id) {
-            $facet = $this->guard($id, 'facet', fn (ProvidesSimPersons $s) => $s->personsAuthorized($user) ? $s->personFacet($identity) : []);
+            $allowed = $this->guard($id, 'authorize', fn (ProvidesSimPersons $s) => (bool) $s->personsAuthorized($user));
+            $facet = $allowed === true ? $this->guard($id, 'facet', fn (ProvidesSimPersons $s) => $s->personFacet($identity)) : null;
 
             if (! is_array($facet)) {
+                $missing[] = $id;
+
                 continue;
             }
 
@@ -110,7 +125,7 @@ class PersonSources
             }
         }
 
-        return SimPerson::known($traits, $access, $ran);
+        return ['person' => SimPerson::known($traits, $access, $ran), 'missing' => $missing];
     }
 
     /** @return list<string> */

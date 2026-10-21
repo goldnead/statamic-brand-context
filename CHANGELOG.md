@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added: `PersonSources::describe()`, which sources did not speak
+
+`describe($key, $user)` returns the person and `missing`: the sources this user may not read and the ones that failed. A copy that is silent about a
+part reads as "she has no access" where the truth is "not read"; a screen can now say so. `state()` is unchanged.
+
+### Known limits of the dry run for a known person
+
+- What a purchase after a mail gives her counts for the steps of the purchase's own way (the product and what it hands on), not for the
+  steps that follow the same mail on the automation's own line, which are planned alongside it.
+- The actions chosen after a marketing mail that an earlier unsubscribe silences stay on the way as lines.
+- Two mails of one object with the same subject and no step share an action key; an action chosen for one applies to both.
+
 ## 1.25.0 — 2026-10-21
 
 ### Added: a real person for the dry run ("as it is for person X"), read only
