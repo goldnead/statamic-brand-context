@@ -31,13 +31,14 @@ final class MailPreview
     private const REMOVE = [
         'script', 'noscript', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet', 'base', 'link', 'meta',
         'svg', 'math', 'audio', 'video', 'source', 'track', 'canvas', 'template', 'title', 'head',
+        'fencedframe', 'portal', 'bgsound', 'keygen',
     ];
 
     /** Attributes that load or navigate on their own. */
-    private const DROP_ATTRIBUTES = ['srcdoc', 'srcset', 'formaction', 'action', 'background', 'poster', 'ping', 'xlink:href', 'data', 'codebase', 'usemap'];
+    private const DROP_ATTRIBUTES = ['srcdoc', 'srcset', 'formaction', 'action', 'background', 'poster', 'ping', 'xlink:href', 'data', 'codebase', 'usemap', 'longdesc', 'manifest'];
 
-    /** Schemes a link may be remembered with. Anything else (javascript:, data:, vbscript:) is dropped. */
-    private const LINK_SCHEMES = ['http', 'https', 'mailto', 'tel'];
+    /** Attributes that point a resource at the element: whichever element wears them, they are not loaded. */
+    private const SOURCE_ATTRIBUTES = ['src', 'lowsrc', 'dynsrc'];
 
     /**
      * @return array{html: string, links: list<array{text: string, url: string}>, blocked_images: int}
@@ -82,14 +83,21 @@ final class MailPreview
 
             if ($tag === 'a' || $tag === 'area') {
                 self::neutralizeLink($element, $links);
-            } elseif ($tag === 'img' || $tag === 'input') {
-                $blocked += self::blockImage($element);
             } elseif ($tag === 'style') {
-                $element->textContent = self::css($element->textContent);
+                $element->textContent = (string) self::css($element->textContent, true);
             }
 
+            // Not by tag name: the parser turns `<image>` into `<img>`, and whatever else carries a source is a fetch.
+            $blocked += self::blockSources($element);
+
             if ($element->hasAttribute('style')) {
-                $element->setAttribute('style', self::css($element->getAttribute('style')));
+                $css = self::css($element->getAttribute('style'), false);
+
+                if ($css === null) {
+                    $element->removeAttribute('style');
+                } else {
+                    $element->setAttribute('style', $css);
+                }
             }
         }
 
@@ -137,7 +145,9 @@ final class MailPreview
     /** @param  list<array{text: string, url: string}>  $links */
     private static function neutralizeLink(DOMElement $element, array &$links): void
     {
-        $target = trim($element->getAttribute('href'));
+        // A browser throws tabs, newlines and control characters out of an address before it reads the scheme
+        // (`java<tab>script:` is `javascript:`): so does this, before it decides.
+        $target = preg_replace('/[\x00-\x20\x7f]+/', '', $element->getAttribute('href')) ?? '';
 
         $element->removeAttribute('target');
         $element->removeAttribute('rel');
@@ -147,10 +157,8 @@ final class MailPreview
             return;
         }
 
-        $scheme = parse_url($target, PHP_URL_SCHEME);
-
-        // A relative link is a link of the site; anything with another scheme is not one at all.
-        if (is_string($scheme) && ! in_array(strtolower($scheme), self::LINK_SCHEMES, true)) {
+        // Only an address a person could follow is remembered: a scheme from the list, or a path of the site.
+        if (! preg_match('~^(https?:|mailto:|tel:|/(?!/))~i', $target)) {
             return;
         }
 
@@ -160,29 +168,43 @@ final class MailPreview
         $links[] = ['text' => $text !== '' ? mb_strimwidth($text, 0, 120, '…') : $target, 'url' => $target];
     }
 
-    private static function blockImage(DOMElement $element): int
+    /**
+     * Takes the source off an element and remembers it. Counts one blocked image per element that had one.
+     */
+    private static function blockSources(DOMElement $element): int
     {
-        if (strtolower($element->tagName) === 'input' && strtolower($element->getAttribute('type')) !== 'image') {
-            return 0;
+        $blocked = 0;
+
+        foreach (self::SOURCE_ATTRIBUTES as $name) {
+            if (! $element->hasAttribute($name)) {
+                continue;
+            }
+
+            $value = $element->getAttribute($name);
+            $element->removeAttribute($name);
+
+            if ($value !== '' && $blocked === 0) {
+                $element->setAttribute('data-sim-src', $value);
+                $element->setAttribute('data-sim-blocked', '1');
+                $blocked = 1;
+            }
         }
 
-        $src = $element->getAttribute('src');
-        $element->removeAttribute('src');
-
-        if ($src === '') {
-            return 0;
-        }
-
-        $element->setAttribute('data-sim-src', $src);
-        $element->setAttribute('data-sim-blocked', '1');
-
-        return 1;
+        return $blocked;
     }
 
-    /** CSS with nothing in it that fetches: `url(...)` becomes `none`, `@import` goes, legacy script hooks go. */
-    private static function css(string $css): string
+    /**
+     * CSS with nothing in it that fetches. `url()` becomes `none`, `@import` goes. Anything written in a way that
+     * hides a fetch from a pattern (a backslash escape, a comment inside a function name, `image-set()` with a
+     * string, `src()`) is not parsed but dropped: a style attribute disappears (null), a style block is emptied.
+     */
+    private static function css(string $css, bool $block): ?string
     {
-        $css = preg_replace('/@import[^;]*;?/i', '', $css) ?? '';
+        if (preg_match('/\\\\|\/\*|image-set|image\s*\(|(?<![\w-])src\s*\(|-webkit-image|cross-fade|element\s*\(/i', $css)) {
+            return $block ? '' : null;
+        }
+
+        $css = preg_replace('/@import\s[^;\n}]*;?/i', '', $css) ?? '';
         $css = preg_replace('/url\s*\([^)]*\)/i', 'none', $css) ?? '';
         $css = preg_replace('/expression\s*\([^)]*\)/i', 'none', $css) ?? '';
         $css = preg_replace('/(behavior|-moz-binding)\s*:[^;}]*/i', '', $css) ?? '';
