@@ -48,6 +48,9 @@ class SimCrmSource implements ProvidesSimPersons
     }
 }
 
+/** Another class under the same name: refused. */
+class SimCrmTwin extends SimCrmSource {}
+
 class SimAccessSource implements ProvidesSimPersons
 {
     public function personSourceId(): string
@@ -184,7 +187,7 @@ it('refuses a class that is no source and a name that is taken by another', func
 
     $sources->register(SimCrmSource::class);
 
-    expect(fn () => $sources->register(new class extends SimCrmSource {}::class))->toThrow(InvalidArgumentException::class);
+    expect(fn () => $sources->register(SimCrmTwin::class))->toThrow(InvalidArgumentException::class);
 });
 
 it('reads and writes nothing of its own: no statement that is not a select', function () {
