@@ -24,4 +24,14 @@ return [
 
     // Period of the cards on the funnels map
     'map_period_days' => 'last :days days',
+
+    // Dry run on the funnels map
+    'sim_again' => ':name is already running on this path',
+    'sim_denied' => 'You may not see this dry run',
+    'sim_unknown' => 'Effect unknown',
+    'sim_mail_fork' => 'After this mail',
+    'sim_mail_same' => 'opened · clicked · nothing: the sequence goes on',
+    'sim_mail_bought' => 'bought: :name',
+    'sim_rejoin' => 'the sequence goes on as above',
+    'sim_more' => '{1} 1 more way|[2,*] :count more ways',
 ];
