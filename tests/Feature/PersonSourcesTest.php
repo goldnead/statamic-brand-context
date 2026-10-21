@@ -151,6 +151,19 @@ it('leaves out the part of a source the user may not read, and keeps the rest', 
         ->and($sources->state('crm|7', null))->toBeNull();
 });
 
+it('says which sources did not speak: the ones the user may not read and the ones that failed', function () {
+    $sources = simSources();
+    $sources->register(SimBrokenSource::class);
+
+    $all = $sources->describe('crm|7', simUser(['see crm', 'see access']));
+    $someRights = $sources->describe('crm|7', simUser(['see crm']));
+
+    expect($all['missing'])->toBe(['broken'])
+        ->and($someRights['missing'])->toBe(['access', 'broken'])
+        ->and($someRights['person']->trait('contact.tags'))->toBe(['chorleitung'])
+        ->and($sources->describe('crm|999', simUser(['see crm'])))->toBeNull();
+});
+
 it('knows no key that is not one of its sources', function () {
     $sources = simSources();
     $user = simUser(['see crm', 'see access']);
