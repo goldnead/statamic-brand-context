@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 1.23.0 — 2026-10-21
+
+### Added: the mail of the dry run, made safe to look at
+
+- `Simulation\MailPreview::prepare($html)` takes a mail apart so that looking at it does nothing: scripts, frames, objects, event
+  attributes, `<base>`, meta refresh and every element's source are removed (a blocked image keeps its address in
+  `data-sim-src`), a link keeps its text and its address (`data-sim-href`) but points nowhere (`href="#"`), CSS is cut of `url()` and
+  `@import`, and CSS written to hide a fetch (escapes, comments in a function name, `image-set()`, `src()`) is dropped instead of
+  matched. Control characters are taken out of an address before its scheme is read. The links come back as data, the blocked
+  images as a count.
+- `MailPreview::frame($prepared)` wraps the result as a whole document with a Content-Security-Policy that allows nothing but inline
+  styles and data images, to be shown in an iframe with an empty `sandbox`.
+- `MapObjectRegistry::mailPreview($type, $id, $meta, $person)`: asks a provider's optional
+  `mailPreview(string $id, array $meta, SimPerson $person): ?array` (`subject`, `html`, `from`) and cleans whatever it hands over.
+  `Simulator::timeline()` entries now carry `owner` (`type:id`), so a screen can ask the owner of a mail for it.
+
 ## 1.22.0 — 2026-10-21
 
 ### Added: the dry run for one known person
