@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Added: dry run ("Probelauf") planner on the map
+
+`Goldnead\BrandContext\Simulation\Simulator::tree($nodes, $edges, $person, $user)` plans the tree of every way
+through a map without doing anything: no mail, no job, no event, no write. It starts at the objects nothing
+points at, asks the owning addon what it would do, hands events on along the map's connections, adds the fork
+after every mail (opened, clicked, bought, nothing), merges alternatives that lead to the same place and caps
+the tree (400 nodes, "n more ways"). Cards no path reaches are reported in `stats.unreached`.
+
+Two optional provider halves, found with `method_exists` like `details()`, so no existing provider changes:
+
+- `paths(string $id): list<SimEvent>`: where a path can begin at the object (`ProvidesMapPaths`).
+- `react(string $id, SimEvent $event, SimPerson $person, CarbonImmutable $at): list<Effect>`
+  (`ProvidesMapSimulation`), with `simulationAuthorized(string $id, $user): bool`. A provider with `react()` but
+  without `simulationAuthorized()` is refused, as with `details()`.
+
+New value objects `SimEvent`, `SimPerson` (made-up or a read-only copy of a real person's state; unknown means
+"fork at every condition"), `Effect`. `MapObjectRegistry` gained `paths()`, `react()`, `canReact()` and
+`simulationAllowed()`.
+
 ## 1.20.0 — 2026-10-21
 
 ### Added: optional `details()` on map providers

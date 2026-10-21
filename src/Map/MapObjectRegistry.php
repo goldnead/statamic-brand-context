@@ -2,9 +2,13 @@
 
 namespace Goldnead\BrandContext\Map;
 
+use Carbon\CarbonImmutable;
 use Goldnead\BrandContext\Contracts\ProvidesMapConnections;
 use Goldnead\BrandContext\Contracts\ProvidesMapEdges;
 use Goldnead\BrandContext\Contracts\ProvidesMapObjects;
+use Goldnead\BrandContext\Simulation\Effect;
+use Goldnead\BrandContext\Simulation\SimEvent;
+use Goldnead\BrandContext\Simulation\SimPerson;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Facades\DB;
@@ -326,6 +330,67 @@ class MapObjectRegistry
         $clean = array_values(array_filter(array_map(fn ($b) => is_array($b) ? $this->cleanBlock($b) : null, $blocks)));
 
         return $clean === [] ? null : $clean;
+    }
+
+    /**
+     * Whether this user may see the dry run of this object. Same rule as {@see detailsAllowed()}:
+     * a provider with `react()` must answer with `simulationAuthorized()`; one that does not is
+     * refused, and one without `react()` has nothing to protect.
+     */
+    public function simulationAllowed(string $type, string $id, $user): bool
+    {
+        if (! $this->has($type)) {
+            return false;
+        }
+
+        $provider = $this->provider($type);
+
+        if (! method_exists($provider, 'react')) {
+            return true;
+        }
+
+        if (! method_exists($provider, 'simulationAuthorized')) {
+            return false;
+        }
+
+        try {
+            return (bool) $provider->simulationAuthorized($id, $user);
+        } catch (Throwable $e) {
+            $this->report($type, 'simulationAuthorized', $e);
+
+            return false;
+        }
+    }
+
+    /** Whether a provider can say what it does in a dry run at all. */
+    public function canReact(string $type): bool
+    {
+        return $this->has($type) && method_exists($this->provider($type), 'react');
+    }
+
+    /**
+     * The events a dry run may begin with at this object (see {@see ProvidesMapPaths}).
+     *
+     * @return list<SimEvent>
+     */
+    public function paths(string $type, string $id): array
+    {
+        $events = $this->guard($type, 'paths', fn ($p) => method_exists($p, 'paths') ? $p->paths($id) : []);
+
+        return is_array($events) ? array_values(array_filter($events, fn ($e) => $e instanceof SimEvent)) : [];
+    }
+
+    /**
+     * What this object would do with the event (see {@see ProvidesMapSimulation}). Null when the
+     * provider cannot say or failed: the caller shows "effect unknown", it never guesses.
+     *
+     * @return list<Effect>|null
+     */
+    public function react(string $type, string $id, SimEvent $event, SimPerson $person, CarbonImmutable $at): ?array
+    {
+        $effects = $this->guard($type, 'react', fn ($p) => method_exists($p, 'react') ? $p->react($id, $event, $person, $at) : null);
+
+        return is_array($effects) ? array_values(array_filter($effects, fn ($e) => $e instanceof Effect)) : null;
     }
 
     /** @param  array<string, mixed>  $b */

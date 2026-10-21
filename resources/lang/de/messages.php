@@ -24,4 +24,14 @@ return [
 
     // Zeitraum der Karten auf der Funnels-Landkarte
     'map_period_days' => 'letzte :days Tage',
+
+    // Probelauf auf der Funnels-Landkarte
+    'sim_again' => ':name läuft auf diesem Weg schon',
+    'sim_denied' => 'Diesen Probelauf darfst du nicht sehen',
+    'sim_unknown' => 'Wirkung unbekannt',
+    'sim_mail_fork' => 'Nach dieser Mail',
+    'sim_mail_same' => 'geöffnet · geklickt · nichts: die Folge läuft weiter',
+    'sim_mail_bought' => 'gekauft: :name',
+    'sim_rejoin' => 'die Folge läuft weiter wie oben',
+    'sim_more' => '{1} 1 weiterer Weg|[2,*] :count weitere Wege',
 ];
