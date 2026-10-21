@@ -466,6 +466,18 @@ it('names the places a way can begin, with the event each one answers to', funct
     ]);
 });
 
+it('offers an object with no entry but a connection leading on as a start, as the tree does', function () {
+    $sim = simSetUp();
+
+    $starts = $sim->starts(
+        [simNode('newsletter', 'nl'), simNode('automation', 'a'), simNode('newsletter', 'lonely')],
+        [simEdge('newsletter:nl', 'automation:a', 'sends')],
+    );
+
+    expect(array_column($starts, 'id'))->toBe(['nl'])
+        ->and($starts[0]['event'])->toBe('started');
+});
+
 it('walks one known person along one line: no fork, the clock in days', function () {
     $sim = simSetUp();
 

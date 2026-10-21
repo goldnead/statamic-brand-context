@@ -232,7 +232,14 @@ class Simulator
                 continue;
             }
 
-            foreach ($this->registry->paths($n['type'], (string) $n['id']) as $event) {
+            $events = $this->registry->paths($n['type'], (string) $n['id']);
+
+            // As in the tree: an object with no entry of its own but a connection leading on is a start.
+            if ($events === [] && isset($this->out[$key])) {
+                $events = [new SimEvent(SimEvent::STARTED)];
+            }
+
+            foreach ($events as $event) {
                 $starts[] = ['type' => $n['type'], 'id' => (string) $n['id'], 'event' => $event->type] + $this->labelOf($n['type'], (string) $n['id']);
             }
         }
