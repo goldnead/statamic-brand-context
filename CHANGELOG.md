@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added: a real person for the dry run ("as it is for person X"), read only
+
+`Contracts\ProvidesSimPersons` and `Simulation\PersonSources` (a singleton): a place that knows part of a real person registers itself in
+`boot()`. The CRM finds her (`searchPersons()`, `identifyPerson()`) and says what it knows (`contact.tags`, `contact.status`, whether she asked
+not to be written to); the access addon says which access she holds; the automations addon which automations she has been through
+(`personFacet(identity)`). `PersonSources::search($query, $user)` and `state($key, $user)` put a `SimPerson` together in memory. Each source is
+guarded by its own right for the signed-in user (what she may not read from one addon is left out, the rest still comes), a source that fails costs
+only its own part and is logged with its name and the exception class, never with what it was asked about. Nothing is written or kept.
+A person who already asked not to be written to has her marketing mails silenced from the start of the way.
+
 ## 1.24.0 — 2026-10-21
 
 ### Added: what the test person does, what she was given, and why
