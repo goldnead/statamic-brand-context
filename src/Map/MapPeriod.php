@@ -32,6 +32,6 @@ final class MapPeriod
     /** Short wording for the card footer, e.g. "last 30 days". */
     public function label(): string
     {
-        return __('last :days days', ['days' => $this->days]);
+        return __('brand-context::messages.map_period_days', ['days' => $this->days]);
     }
 }

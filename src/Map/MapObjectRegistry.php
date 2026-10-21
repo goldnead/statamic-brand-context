@@ -273,6 +273,116 @@ class MapObjectRegistry
     }
 
     /**
+     * Whether this user may read the panel details of this object. A provider with `details()` must
+     * say so itself with `detailsAuthorized(string $id, $user): bool` (the right that guards the
+     * object in its own Control Panel); one that does not is refused, so a new `details()` never
+     * opens a read by accident. A provider without `details()` has nothing to protect.
+     */
+    public function detailsAllowed(string $type, string $id, $user): bool
+    {
+        if (! $this->has($type)) {
+            return false;
+        }
+
+        $provider = $this->provider($type);
+
+        if (! method_exists($provider, 'details')) {
+            return true;
+        }
+
+        if (! method_exists($provider, 'detailsAuthorized')) {
+            return false;
+        }
+
+        try {
+            return (bool) $provider->detailsAuthorized($id, $user);
+        } catch (Throwable $e) {
+            $this->report($type, 'detailsAuthorized', $e);
+
+            return false;
+        }
+    }
+
+    /**
+     * What a provider shows in the card's panel beyond the one number: facts and short lists,
+     * in the provider's own words. Optional: a provider without `details()` (or one that fails,
+     * or does not know the id) answers null and the panel shows what it always showed.
+     *
+     * Blocks are `facts` (rows of label, value, optional link) and `list` (items with title,
+     * optional meta and image, at most 12 shown, the rest counted in `more`). Anything else is
+     * dropped, links that are not a path or http(s) URL are dropped, so the panel renders
+     * whatever arrives without trusting it.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    public function details(string $type, string $id, MapPeriod $period): ?array
+    {
+        $blocks = $this->guard($type, 'details', fn ($p) => method_exists($p, 'details') ? $p->details($id, $period) : null);
+
+        if (! is_array($blocks)) {
+            return null;
+        }
+
+        $clean = array_values(array_filter(array_map(fn ($b) => is_array($b) ? $this->cleanBlock($b) : null, $blocks)));
+
+        return $clean === [] ? null : $clean;
+    }
+
+    /** @param  array<string, mixed>  $b */
+    protected function cleanBlock(array $b): ?array
+    {
+        $title = $this->text($b['title'] ?? null);
+
+        if (($b['kind'] ?? null) === 'facts') {
+            $rows = [];
+            foreach ((array) ($b['rows'] ?? []) as $row) {
+                $label = is_array($row) ? $this->text($row['label'] ?? null) : null;
+                $value = is_array($row) ? $this->text($row['value'] ?? null) : null;
+                if ($label !== null && $value !== null) {
+                    $rows[] = ['label' => $label, 'value' => $value, 'href' => $this->link($row['href'] ?? null)];
+                }
+            }
+
+            return $rows === [] ? null : ['kind' => 'facts', 'title' => $title, 'rows' => $rows];
+        }
+
+        if (($b['kind'] ?? null) === 'list') {
+            $items = [];
+            foreach ((array) ($b['items'] ?? []) as $item) {
+                $t = is_array($item) ? $this->text($item['title'] ?? null) : null;
+                if ($t !== null) {
+                    $items[] = ['title' => $t, 'meta' => $this->text($item['meta'] ?? null), 'image' => $this->link($item['image'] ?? null)];
+                }
+            }
+
+            if ($items === []) {
+                return null;
+            }
+
+            $shown = array_slice($items, 0, 12);
+            $more = max(0, (int) ($b['more'] ?? 0)) + (count($items) - count($shown));
+
+            return ['kind' => 'list', 'title' => $title, 'items' => $shown, 'more' => $more > 0 ? $more : null];
+        }
+
+        return null;
+    }
+
+    protected function text(mixed $v): ?string
+    {
+        $v = is_scalar($v) ? trim((string) $v) : '';
+
+        return $v === '' ? null : mb_strimwidth($v, 0, 160, '…');
+    }
+
+    protected function link(mixed $v): ?string
+    {
+        $v = is_string($v) ? trim($v) : '';
+
+        return preg_match('~^(/(?!/)|https?://)~i', $v) ? $v : null;
+    }
+
+    /**
      * @param  array<string, string>  $c
      * @return array{0: array, 1: array<string, string>} rule and the connection with its kind filled in
      */

@@ -21,4 +21,7 @@ return [
     'settings_empty_heading' => 'Keines der installierten Addons meldet Einstellungen an.',
     'settings_empty_item_heading' => 'Add-ons ansehen',
     'settings_empty_description' => 'Addons mit Einstellungen erscheinen hier, sobald sie installiert sind.',
+
+    // Zeitraum der Karten auf der Funnels-Landkarte
+    'map_period_days' => 'letzte :days Tage',
 ];

@@ -21,4 +21,7 @@ return [
     'settings_empty_heading' => 'None of the installed addons registers any settings.',
     'settings_empty_item_heading' => 'View add-ons',
     'settings_empty_description' => 'Addons that offer settings appear here once installed.',
+
+    // Period of the cards on the funnels map
+    'map_period_days' => 'last :days days',
 ];

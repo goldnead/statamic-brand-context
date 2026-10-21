@@ -99,6 +99,7 @@ it('returns a metric with what and over which period, or null', function () {
     expect($m->value)->toBe(7)
         ->and($m->toArray()['what'])->toBe('Runs')
         ->and($m->toArray()['period'])->toBe('last 30 days')
+        ->and(tap(MapPeriod::lastDays(30), fn () => app()->setLocale('de'))->label())->toBe('letzte 30 Tage')
         ->and($r->metric('fake', 'b', $period))->toBeNull()
         ->and($r->metric('boom', 'a', $period))->toBeNull()
         ->and($r->metric('absent', 'a', $period))->toBeNull();
