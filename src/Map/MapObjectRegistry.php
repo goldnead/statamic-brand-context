@@ -7,6 +7,7 @@ use Goldnead\BrandContext\Contracts\ProvidesMapConnections;
 use Goldnead\BrandContext\Contracts\ProvidesMapEdges;
 use Goldnead\BrandContext\Contracts\ProvidesMapObjects;
 use Goldnead\BrandContext\Simulation\Effect;
+use Goldnead\BrandContext\Simulation\MailPreview;
 use Goldnead\BrandContext\Simulation\SimEvent;
 use Goldnead\BrandContext\Simulation\SimPerson;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -391,6 +392,38 @@ class MapObjectRegistry
         $effects = $this->guard($type, 'react', fn ($p) => method_exists($p, 'react') ? $p->react($id, $event, $person, $at) : null);
 
         return is_array($effects) ? array_values(array_filter($effects, fn ($e) => $e instanceof Effect)) : null;
+    }
+
+    /**
+     * The mail of an effect, as the object that owns it would write it, made safe to look at (see
+     * {@see MailPreview}): no script, no remote image, no live link, framed with a policy that
+     * allows nothing. Whatever the provider hands over is cleaned here, so a provider cannot hand
+     * over a way around it. Null when the provider cannot render it (or failed).
+     *
+     * A provider offers it with `mailPreview(string $id, array $meta, SimPerson $person): ?array`
+     * returning `['subject' => string, 'html' => string, 'from' => ?string]`. The caller has asked
+     * {@see simulationAllowed()} before.
+     *
+     * @param  array<string, mixed>  $meta  what the effect said about itself (a step key, a template slug)
+     * @return array{subject: string, from: ?string, html: string, links: list<array{text: string, url: string}>, blocked_images: int}|null
+     */
+    public function mailPreview(string $type, string $id, array $meta, SimPerson $person): ?array
+    {
+        $mail = $this->guard($type, 'mailPreview', fn ($p) => method_exists($p, 'mailPreview') ? $p->mailPreview($id, $meta, $person) : null);
+
+        if (! is_array($mail) || ! is_string($mail['html'] ?? null)) {
+            return null;
+        }
+
+        $prepared = MailPreview::prepare($mail['html']);
+
+        return [
+            'subject' => mb_strimwidth(trim((string) ($mail['subject'] ?? '')), 0, 300, '…'),
+            'from' => isset($mail['from']) && is_string($mail['from']) && trim($mail['from']) !== '' ? mb_strimwidth(trim($mail['from']), 0, 200, '…') : null,
+            'html' => MailPreview::frame($prepared['html']),
+            'links' => $prepared['links'],
+            'blocked_images' => $prepared['blocked_images'],
+        ];
     }
 
     /** @param  array<string, mixed>  $b */

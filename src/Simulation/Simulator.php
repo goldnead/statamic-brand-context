@@ -277,6 +277,7 @@ class Simulator
                     'detail' => $node['detail'],
                     'object' => $node['object'],
                     'meta' => $node['meta'],
+                    'owner' => $node['owner'],
                 ];
                 $flatten($node['children']);
             }
@@ -335,6 +336,7 @@ class Simulator
 
         $label = $this->labelOf($type, $id);
         $node = $this->node('enter', $label['label'], $label['type_label'], $ctx['at'], 0, ['type' => $type, 'id' => $id], ['event' => $event->type, 'edge' => $edgeKind]);
+        $node['owner'] = $key;
 
         if ($this->registry->has($type) && ! $this->registry->simulationAllowed($type, $id, $this->user)) {
             $node['children'][] = $this->leaf('denied', __('brand-context::messages.sim_denied'), $ctx['at']);
@@ -409,6 +411,8 @@ class Simulator
         $inner = [...$ctx, 'at' => $at, 'here' => $here, 'depth' => $ctx['depth'] + 1];
         $object = $effect->object ? $this->labelOf($effect->object['type'], $effect->object['id']) + $effect->object : null;
         $node = $this->node($effect->kind, $effect->label, $effect->detail, $at, $effect->afterSeconds, $object, $effect->meta);
+        // Whose effect this is: the object that answered (or the one the provider says it belongs to).
+        $node['owner'] = $here;
 
         if ($effect->kind === Effect::FORK) {
             $node['children'] = $this->mergeAlternatives($this->alternatives($effect->children, $inner));
@@ -681,6 +685,7 @@ class Simulator
             'object' => $object,
             'meta' => $meta,
             'count' => 1,
+            'owner' => null,
             'children' => [],
         ];
     }
