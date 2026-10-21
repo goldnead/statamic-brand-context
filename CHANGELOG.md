@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.21.0 — 2026-10-21
+
 ### Added: dry run ("Probelauf") planner on the map
 
 `Goldnead\BrandContext\Simulation\Simulator::tree($nodes, $edges, $person, $user)` plans the tree of every way
