@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.25.0 — 2026-10-21
+
 ### Added: a real person for the dry run ("as it is for person X"), read only
 
 `Contracts\ProvidesSimPersons` and `Simulation\PersonSources` (a singleton): a place that knows part of a real person registers itself in
