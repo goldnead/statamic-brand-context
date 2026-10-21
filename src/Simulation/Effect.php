@@ -36,9 +36,15 @@ final class Effect
     /** What happens here is not known; never a guess. */
     public const UNKNOWN = 'unknown';
 
+    /**
+     * A decision a known person went through: the question and which way she took, with the reason.
+     * Its children are the way taken. The answer to "why this path".
+     */
+    public const DECISION = 'decision';
+
     public const KINDS = [
         self::MAIL, self::PAGE, self::ACCESS, self::TRAIT, self::WAIT, self::STOP,
-        self::FORK, self::ALT, self::EMIT, self::UNKNOWN,
+        self::FORK, self::ALT, self::EMIT, self::UNKNOWN, self::DECISION,
     ];
 
     /**
@@ -102,6 +108,16 @@ final class Effect
     public static function fork(string $label, array $alternatives): self
     {
         return new self(self::FORK, $label, null, 0, [], array_values($alternatives));
+    }
+
+    /**
+     * The way a known person took at a question, and why.
+     *
+     * @param  list<Effect>  $children  the way taken
+     */
+    public static function decision(string $question, string $answer, array $children = []): self
+    {
+        return new self(self::DECISION, $question, $answer, 0, [], array_values($children));
     }
 
     /** @param  list<Effect>  $children */
