@@ -69,7 +69,7 @@ class Simulator
 
     /**
      * @param  list<array{type: string, id: string}>  $nodes  the objects on the map, in the map's order
-     * @param  list<array{from_type: string, from_id: string, to_type: string, to_id: string, kind: string}>  $edges
+     * @param  list<array{from_type: string, from_id: string, to_type: string, to_id: string, kind: string, label?: string}>  $edges
      * @param  mixed  $user  the Control Panel user whose rights apply
      * @return array{roots: list<array<string, mixed>>, stats: array{nodes: int, leaves: int, cut: int, unreached: list<string>}}
      */
@@ -169,7 +169,7 @@ class Simulator
      * Reset the planner for one plan and read the map into it.
      *
      * @param  list<array{type: string, id: string}>  $nodes
-     * @param  list<array{from_type: string, from_id: string, to_type: string, to_id: string, kind: string}>  $edges
+     * @param  list<array{from_type: string, from_id: string, to_type: string, to_id: string, kind: string, label?: string}>  $edges
      * @return array<string, true> the objects some connection points at
      */
     private function prepare(array $nodes, array $edges, ?SimPerson $person, mixed $user, ?CarbonImmutable $start): array
@@ -217,7 +217,7 @@ class Simulator
      * points at, with each event its provider names (a lead magnet: asked for; a product: bought).
      *
      * @param  list<array{type: string, id: string}>  $nodes
-     * @param  list<array{from_type: string, from_id: string, to_type: string, to_id: string, kind: string}>  $edges
+     * @param  list<array{from_type: string, from_id: string, to_type: string, to_id: string, kind: string, label?: string}>  $edges
      * @return list<array{type: string, id: string, event: string, label: string, type_label: string}>
      */
     public function starts(array $nodes, array $edges): array
@@ -255,7 +255,7 @@ class Simulator
      * not asked.
      *
      * @param  list<array{type: string, id: string}>  $nodes
-     * @param  list<array{from_type: string, from_id: string, to_type: string, to_id: string, kind: string}>  $edges
+     * @param  list<array{from_type: string, from_id: string, to_type: string, to_id: string, kind: string, label?: string}>  $edges
      * @param  array{type: string, id: string, event: string}  $startAt
      * @return array{entries: list<array<string, mixed>>, stats: array{entries: int, days: list<int>, cut: int}}
      */
@@ -266,7 +266,7 @@ class Simulator
         $root = $this->enter($startAt['type'], $startAt['id'], new SimEvent($startAt['event']), $this->context());
         $entries = [];
 
-        $flatten = function (array $list) use (&$flatten, &$entries): void {
+        $flatten = function (array $list, array $why) use (&$flatten, &$entries): void {
             foreach ($list as $node) {
                 $entries[] = [
                     'id' => 'e'.(count($entries) + 1),
@@ -278,11 +278,42 @@ class Simulator
                     'object' => $node['object'],
                     'meta' => $node['meta'],
                     'owner' => $node['owner'],
+                    'why' => array_slice($why, -6),
                 ];
-                $flatten($node['children']);
+
+                $next = $why;
+
+                if ($node['kind'] === 'enter') {
+                    $next[] = $this->whyEnter($node);
+                } elseif ($node['kind'] === 'decision') {
+                    $next[] = $node['label'].': '.$node['detail'];
+                } elseif ($node['kind'] === 'action') {
+                    $next[] = $node['label'];
+                }
+
+                $flatten($node['children'], $next);
             }
         };
-        $flatten($root === null ? [] : [$root]);
+        $flatten($root === null ? [] : [$root], []);
+
+        // She unsubscribed at some moment: the marketing mails after it do not go out, on whatever branch they stand.
+        $unsubscribedAt = null;
+
+        foreach ($entries as $entry) {
+            if ($entry['kind'] === 'action' && ($entry['meta']['action'] ?? null) === SimAction::UNSUBSCRIBE) {
+                $unsubscribedAt = min($unsubscribedAt ?? PHP_INT_MAX, $entry['at']);
+            }
+        }
+
+        if ($unsubscribedAt !== null) {
+            foreach ($entries as $i => $entry) {
+                if ($entry['kind'] === 'mail' && ($entry['meta']['marketing'] ?? false) === true && $entry['at'] > $unsubscribedAt) {
+                    $entries[$i]['kind'] = 'stop';
+                    $entries[$i]['detail'] = $entry['label'];
+                    $entries[$i]['label'] = __('brand-context::messages.sim_unsubscribed_mail');
+                }
+            }
+        }
 
         // The way is one line, but a parallel split or a call can interleave: order by the clock, keep the walk's order inside a moment.
         usort($entries, fn (array $a, array $b) => $a['at'] <=> $b['at']);
@@ -301,16 +332,16 @@ class Simulator
         ];
     }
 
-    /** @return array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string} */
+    /** @return array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string, person: SimPerson} */
     private function context(): array
     {
-        return ['path' => [], 'bought' => [], 'at' => 0, 'depth' => 0, 'here' => null];
+        return ['path' => [], 'bought' => [], 'at' => 0, 'depth' => 0, 'here' => null, 'person' => $this->person];
     }
 
     /**
      * An object receives an event.
      *
-     * @param  array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string}  $ctx
+     * @param  array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string, person: SimPerson}  $ctx
      * @return array<string, mixed>|null
      */
     private function enter(string $type, string $id, SimEvent $event, array $ctx, ?string $edgeKind = null): ?array
@@ -345,8 +376,13 @@ class Simulator
         }
 
         $effects = $this->registry->canReact($type)
-            ? $this->registry->react($type, $id, $event, $this->person, $this->start->addSeconds($ctx['at']))
+            ? $this->registry->react($type, $id, $event, $ctx['person'], $this->start->addSeconds($ctx['at']))
             : null;
+
+        // From here on she has been through this automation: what comes after can ask.
+        if ($type === 'automation') {
+            $ctx['person'] = $ctx['person']->withRun($id);
+        }
 
         if ($effects === null) {
             // Nothing is known about this object. The map still says where it leads, so the
@@ -364,7 +400,7 @@ class Simulator
 
     /**
      * @param  list<Effect>  $effects
-     * @param  array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string}  $ctx
+     * @param  array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string, person: SimPerson}  $ctx
      * @return list<array<string, mixed>>
      */
     private function expandList(array $effects, array $ctx): array
@@ -381,13 +417,18 @@ class Simulator
             }
 
             array_push($nodes, ...$this->expand($effect, $ctx));
+
+            // What she was given stays given for what follows on this path.
+            if ($effect->kind === Effect::ACCESS && is_string($effect->meta['slug'] ?? null) && $effect->meta['slug'] !== '') {
+                $ctx['person'] = $ctx['person']->withAccess($effect->meta['slug']);
+            }
         }
 
         return $nodes;
     }
 
     /**
-     * @param  array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string}  $ctx
+     * @param  array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string, person: SimPerson}  $ctx
      * @return list<array<string, mixed>>
      */
     private function expand(Effect $effect, array $ctx): array
@@ -422,12 +463,72 @@ class Simulator
 
         $children = $this->expandList($effect->children, $inner);
 
-        // A known person does what she does: the fork "opened, clicked, bought, nothing" is for the map of every way.
-        if ($effect->kind === Effect::MAIL && ! $this->person->isKnown()) {
+        if ($effect->kind === Effect::MAIL && $ctx['person']->isKnown()) {
+            // A known person does what she does: no fork "opened, clicked, bought, nothing". What the operator
+            // let her do after this mail is part of her way.
+            $mailKey = self::mailKey($here, $effect->meta, $effect->label);
+            $node['meta']['mail_key'] = $mailKey;
+
+            foreach ($ctx['person']->actionsFor($mailKey) as $action) {
+                array_push($children, ...$this->action($action, $inner, $at, $here));
+            }
+        } elseif ($effect->kind === Effect::MAIL) {
             $children = $this->mailFork($children, $inner);
         }
 
         $node['children'] = $children;
+
+        return [$node];
+    }
+
+    /**
+     * What a mail is called inside the simulation, so an action can be tied to it: the object it belongs to and
+     * its step (or, for a mail without one, its subject).
+     *
+     * @param  array<string, mixed>  $meta
+     */
+    public static function mailKey(?string $owner, array $meta, string $label): string
+    {
+        return ($owner ?? '').'|'.(is_string($meta['node'] ?? null) && $meta['node'] !== '' ? $meta['node'] : $label);
+    }
+
+    /**
+     * One thing the person does after a mail, as lines of her way.
+     *
+     * @param  array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string, person: SimPerson}  $ctx
+     * @return list<array<string, mixed>>
+     */
+    private function action(SimAction $action, array $ctx, int $mailAt, ?string $owner): array
+    {
+        if (! $this->room()) {
+            $this->cut++;
+
+            return [$this->more(1, $mailAt)];
+        }
+
+        $at = $mailAt + $action->afterSeconds;
+        $meta = ['action' => $action->type, 'url' => $action->url];
+
+        if ($action->type === SimAction::UNSUBSCRIBE) {
+            return [$this->node('action', __('brand-context::messages.sim_unsubscribes'), null, $at, $action->afterSeconds, null, $meta)];
+        }
+
+        if ($action->type === SimAction::CLICK) {
+            return [$this->node('action', __('brand-context::messages.sim_clicks', ['link' => (string) $action->url]), null, $at, $action->afterSeconds, null, $meta)];
+        }
+
+        [$type, $id] = array_pad(explode(':', (string) $action->product, 2), 2, '');
+
+        if ($type !== 'product' || ! isset($this->present[$action->product])) {
+            return [$this->node('unknown', __('brand-context::messages.sim_buys_unknown'), null, $at, $action->afterSeconds, null, $meta)];
+        }
+
+        $node = $this->node('action', __('brand-context::messages.sim_buys', ['name' => $this->labelOf($type, $id)['label']]), null, $at, $action->afterSeconds, null, $meta);
+        $bought = $this->enter($type, $id, new SimEvent(SimEvent::PURCHASED, $owner ? $this->split($owner) : null), [...$ctx, 'at' => $at]);
+
+        if ($bought !== null) {
+            $node['children'][] = $bought;
+        }
 
         return [$node];
     }
@@ -440,7 +541,7 @@ class Simulator
      * the original sequence goes on as it was ("on as above").
      *
      * @param  list<array<string, mixed>>  $continuation
-     * @param  array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string}  $ctx
+     * @param  array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string, person: SimPerson}  $ctx
      * @return list<array<string, mixed>>
      */
     private function mailFork(array $continuation, array $ctx): array
@@ -498,7 +599,7 @@ class Simulator
 
     /**
      * @param  list<Effect>  $alts
-     * @param  array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string}  $ctx
+     * @param  array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string, person: SimPerson}  $ctx
      * @return list<array<string, mixed>>
      */
     private function alternatives(array $alts, array $ctx): array
@@ -580,7 +681,7 @@ class Simulator
     /**
      * Hand an event on to the objects the map leads to.
      *
-     * @param  array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string}  $ctx
+     * @param  array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string, person: SimPerson}  $ctx
      * @return list<array<string, mixed>>
      */
     private function deliver(SimEvent $event, array $ctx): array
@@ -591,14 +692,14 @@ class Simulator
         if ($event->target !== null) {
             // A call names its receiver: it is entered even when the map does not show it, because the
             // call is real. Whoever may not see it is told so by the receiver's own right.
-            $targets[$event->target['type'].':'.$event->target['id']] = [$event->target['type'], $event->target['id'], null];
+            $targets[$event->target['type'].':'.$event->target['id']] = [$event->target['type'], $event->target['id'], null, null];
         } elseif ($from !== null) {
             foreach ($this->out[$from] ?? [] as $edge) {
                 if ($event->via !== [] && ! in_array($edge['kind'], $event->via, true)) {
                     continue;
                 }
 
-                $targets[$edge['to_type'].':'.$edge['to_id']] ??= [$edge['to_type'], $edge['to_id'], $edge['kind']];
+                $targets[$edge['to_type'].':'.$edge['to_id']] ??= [$edge['to_type'], $edge['to_id'], $edge['kind'], $edge['label'] ?? null];
             }
         }
 
@@ -606,7 +707,7 @@ class Simulator
         $total = count($targets);
         $i = 0;
 
-        foreach ($targets as [$type, $id, $kind]) {
+        foreach ($targets as [$type, $id, $kind, $edgeLabel]) {
             if (! $this->room() || $ctx['depth'] > self::MAX_DEPTH) {
                 $this->cut += $total - $i;
                 $nodes[] = $this->more($total - $i, $ctx['at']);
@@ -623,11 +724,35 @@ class Simulator
                     $node['meta']['off_map'] = true;
                 }
 
+                if ($edgeLabel !== null) {
+                    $node['meta']['edge_label'] = $edgeLabel;
+                }
+
                 $nodes[] = $node;
             }
         }
 
         return $nodes;
+    }
+
+    /**
+     * Why a card is part of the way, in words: what it was reached by.
+     *
+     * @param  array<string, mixed>  $node  an `enter` node
+     */
+    private function whyEnter(array $node): string
+    {
+        $event = (string) ($node['meta']['event'] ?? '');
+        $edge = (string) ($node['meta']['edge_label'] ?? $node['meta']['edge'] ?? '');
+        $how = match (true) {
+            $event === SimEvent::REQUESTED => __('brand-context::messages.sim_how_requested'),
+            $event === SimEvent::PURCHASED => __('brand-context::messages.sim_how_purchased'),
+            $event === SimEvent::STARTED => __('brand-context::messages.sim_how_started'),
+            $edge !== '' => __('brand-context::messages.sim_how_edge', ['edge' => $edge]),
+            default => __('brand-context::messages.sim_how_reached'),
+        };
+
+        return __('brand-context::messages.sim_why_enter', ['type' => (string) $node['detail'], 'name' => (string) $node['label'], 'how' => $how]);
     }
 
     /** @return array{type: string, id: string} */

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added: what the test person does, what she was given, and why
+
+- `SimAction` (buy, click, unsubscribe) and `SimPerson::known(actions: …)`: what the operator lets the person do after a mail,
+  tied to the mail by `Simulator::mailKey($owner, $meta, $label)` (the object and its step, or its subject). A purchase is
+  handed to the product on the map (a line "buys: …" and the product's own answer), a click is a line, an unsubscribe silences
+  the effects whose `meta.marketing` is true after it (they become a "stop" line), on whatever branch they stand. Nothing is
+  bought, clicked or unsubscribed; at most 12 actions, the delay at most a year.
+- The person's state follows her along the way: an `Effect::access()` with `meta.slug` is held by what comes after it, and she
+  has "run" an automation once she is in it (`SimPerson::hasAccess()`, `hasRun()` answer for the next provider).
+- Every entry of `timeline()` carries `why`: the cards it was reached through (with the event or the connection's label) and the
+  decisions taken, oldest first, at most six. Input edges may carry a `label`.
+
 ## 1.23.0 — 2026-10-21
 
 ### Added: the mail of the dry run, made safe to look at

@@ -20,12 +20,14 @@ final class SimPerson
      * @param  array<string, mixed>  $traits  tags and attributes, key => value
      * @param  list<string>  $access  grant slugs she already holds
      * @param  list<string>  $ran  handles of automations she has already been through
+     * @param  list<SimAction>  $actions  what she does after which mail (chosen by the operator)
      */
     private function __construct(
         public readonly bool $known,
         public readonly array $traits = [],
         public readonly array $access = [],
         public readonly array $ran = [],
+        public readonly array $actions = [],
     ) {}
 
     /** Nothing is known: providers fork at every condition. */
@@ -40,10 +42,11 @@ final class SimPerson
      * @param  array<string, mixed>  $traits
      * @param  list<string>  $access
      * @param  list<string>  $ran
+     * @param  list<SimAction>  $actions
      */
-    public static function known(array $traits = [], array $access = [], array $ran = []): self
+    public static function known(array $traits = [], array $access = [], array $ran = [], array $actions = []): self
     {
-        return new self(true, $traits, array_values(array_unique($access)), array_values(array_unique($ran)));
+        return new self(true, $traits, array_values(array_unique($access)), array_values(array_unique($ran)), array_slice(array_values(array_filter($actions, fn ($a) => $a instanceof SimAction)), 0, SimAction::MAX));
     }
 
     public function isKnown(): bool
@@ -68,16 +71,22 @@ final class SimPerson
 
     public function withTrait(string $key, mixed $value): self
     {
-        return new self($this->known, [...$this->traits, $key => $value], $this->access, $this->ran);
+        return new self($this->known, [...$this->traits, $key => $value], $this->access, $this->ran, $this->actions);
     }
 
     public function withAccess(string $slug): self
     {
-        return new self($this->known, $this->traits, array_values(array_unique([...$this->access, $slug])), $this->ran);
+        return new self($this->known, $this->traits, array_values(array_unique([...$this->access, $slug])), $this->ran, $this->actions);
     }
 
     public function withRun(string $handle): self
     {
-        return new self($this->known, $this->traits, $this->access, array_values(array_unique([...$this->ran, $handle])));
+        return new self($this->known, $this->traits, $this->access, array_values(array_unique([...$this->ran, $handle])), $this->actions);
+    }
+
+    /** What she does after the mail with this key, in the order the operator chose. */
+    public function actionsFor(string $mailKey): array
+    {
+        return array_values(array_filter($this->actions, fn (SimAction $a) => $a->mail === $mailKey));
     }
 }
