@@ -517,6 +517,73 @@ it('shows the alternatives of a provider that forks anyway in the one line of a 
         ->toContain('alt:C: no');
 });
 
+/** A provider that can write its mail, honestly or not. */
+class SimMailer extends SimFakeProvider
+{
+    public function type(): string
+    {
+        return 'mailer';
+    }
+
+    public function mailPreview(string $id, array $meta, SimPerson $person): ?array
+    {
+        return match ($id) {
+            'bad' => ['subject' => 'Hi', 'from' => 'a@b.test', 'html' => '<p>Hallo</p><script>alert(1)</script><img src="https://t.example/p.gif"><a href="https://t.example/c?x=1">Klick</a>'],
+            'boom' => throw new RuntimeException('render failed'),
+            'none' => null,
+            default => ['subject' => 'Node '.($meta['node'] ?? '?'), 'html' => '<p>Mail</p>'],
+        };
+    }
+}
+
+it('hands the mail of an effect over made safe, whatever the provider wrote', function () {
+    simSetUp();
+    $r = app(MapObjectRegistry::class);
+    $r->register(SimMailer::class);
+
+    $mail = $r->mailPreview('mailer', 'bad', [], SimPerson::unknown());
+
+    expect($mail['subject'])->toBe('Hi')
+        ->and($mail['from'])->toBe('a@b.test')
+        ->and($mail['links'])->toBe([['text' => 'Klick', 'url' => 'https://t.example/c?x=1']])
+        ->and($mail['blocked_images'])->toBe(1)
+        ->and($mail['html'])->toContain('Hallo')
+        ->and($mail['html'])->not->toContain('<script')
+        ->and($mail['html'])->not->toContain('src="https://')
+        ->and(html_entity_decode($mail['html'], ENT_QUOTES))->toContain("default-src 'none'", 'img-src data:');
+});
+
+it('answers null for a mail it cannot get: no method, a failure, nothing, an unknown type', function () {
+    simSetUp();
+    $r = app(MapObjectRegistry::class);
+    $r->register(SimMailer::class);
+
+    expect($r->mailPreview('automation', 'x', [], SimPerson::unknown()))->toBeNull()
+        ->and($r->mailPreview('mailer', 'boom', [], SimPerson::unknown()))->toBeNull()
+        ->and($r->mailPreview('mailer', 'none', [], SimPerson::unknown()))->toBeNull()
+        ->and($r->mailPreview('nope', 'x', [], SimPerson::unknown()))->toBeNull();
+});
+
+it('says whose effect each step of the way is', function () {
+    $sim = simSetUp();
+
+    $timeline = $sim->timeline(
+        [simNode('lead_magnet', 'lm'), simNode('automation', 'welcome')],
+        [simEdge('lead_magnet:lm', 'automation:welcome')],
+        ['type' => 'lead_magnet', 'id' => 'lm', 'event' => 'requested'],
+        SimPerson::known(),
+    );
+
+    expect(array_map(fn ($e) => $e['kind'].'@'.$e['owner'], $timeline['entries']))->toBe([
+        'enter@lead_magnet:lm',
+        'mail@lead_magnet:lm',
+        'enter@automation:welcome',
+        'mail@automation:welcome',
+        'wait@automation:welcome',
+        'mail@automation:welcome',
+    ]);
+});
+
 it('keeps a known person immutable and answers for her', function () {
     $p = SimPerson::known(['tag' => 'chor'], ['kurs']);
     $q = $p->withAccess('masterclass')->withTrait('tag', 'solo')->withRun('welcome');

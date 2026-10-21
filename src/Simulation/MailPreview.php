@@ -108,11 +108,12 @@ final class MailPreview
     /**
      * The whole document to hand to an iframe as `srcdoc`, shown with `sandbox=""`.
      */
-    public static function frame(string $preparedHtml, bool $dark = false): string
+    public static function frame(string $preparedHtml): string
     {
         $csp = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'";
-        $color = $dark ? '#e5e7eb' : '#111827';
-        $bg = $dark ? '#111827' : '#ffffff';
+        // A mail is designed for white, whatever theme the screen around it wears.
+        $color = '#111827';
+        $bg = '#ffffff';
 
         return '<!doctype html><html><head><meta charset="utf-8">'
             .'<meta http-equiv="Content-Security-Policy" content="'.htmlspecialchars($csp, ENT_QUOTES).'">'
