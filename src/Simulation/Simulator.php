@@ -75,40 +75,7 @@ class Simulator
      */
     public function tree(array $nodes, array $edges, ?SimPerson $person = null, mixed $user = null, ?CarbonImmutable $start = null): array
     {
-        $this->budget = self::MAX_NODES;
-        $this->cut = 0;
-        $this->labels = [];
-        $this->out = [];
-        $this->present = [];
-        $this->entered = [];
-        $this->products = [];
-        $this->person = $person ?? SimPerson::unknown();
-        $this->user = $user;
-        $this->start = $start ?? CarbonImmutable::now();
-
-        $incoming = [];
-
-        foreach ($nodes as $n) {
-            $this->present[$n['type'].':'.$n['id']] = true;
-
-            if ($n['type'] === 'product') {
-                $this->products[] = ['type' => 'product', 'id' => (string) $n['id']];
-            }
-        }
-
-        foreach ($edges as $e) {
-            $from = $e['from_type'].':'.$e['from_id'];
-            $to = $e['to_type'].':'.$e['to_id'];
-
-            // "waits for" is a dashed line, not a hand-over of people: whoever waits starts on her own. A
-            // hand-drawn line is a note of the operator, not a connection: nobody walks along a note.
-            if (! isset($this->present[$from], $this->present[$to]) || $from === $to || in_array($e['kind'], self::NOT_A_WAY, true)) {
-                continue;
-            }
-
-            $this->out[$from][] = $e;
-            $incoming[$to] = true;
-        }
+        $incoming = $this->prepare($nodes, $edges, $person, $user, $start);
 
         $roots = [];
         $left = 0;
@@ -196,6 +163,134 @@ class Simulator
         $unreached = array_values(array_diff(array_keys($this->present), array_keys($this->entered)));
 
         return ['roots' => $roots, 'stats' => ['nodes' => $counter, 'leaves' => $leaves, 'cut' => $this->cut, 'unreached' => $unreached]];
+    }
+
+    /**
+     * Reset the planner for one plan and read the map into it.
+     *
+     * @param  list<array{type: string, id: string}>  $nodes
+     * @param  list<array{from_type: string, from_id: string, to_type: string, to_id: string, kind: string}>  $edges
+     * @return array<string, true> the objects some connection points at
+     */
+    private function prepare(array $nodes, array $edges, ?SimPerson $person, mixed $user, ?CarbonImmutable $start): array
+    {
+        $this->budget = self::MAX_NODES;
+        $this->cut = 0;
+        $this->labels = [];
+        $this->out = [];
+        $this->present = [];
+        $this->entered = [];
+        $this->products = [];
+        $this->person = $person ?? SimPerson::unknown();
+        $this->user = $user;
+        $this->start = $start ?? CarbonImmutable::now();
+
+        $incoming = [];
+
+        foreach ($nodes as $n) {
+            $this->present[$n['type'].':'.$n['id']] = true;
+
+            if ($n['type'] === 'product') {
+                $this->products[] = ['type' => 'product', 'id' => (string) $n['id']];
+            }
+        }
+
+        foreach ($edges as $e) {
+            $from = $e['from_type'].':'.$e['from_id'];
+            $to = $e['to_type'].':'.$e['to_id'];
+
+            // "waits for" is a dashed line, not a hand-over of people: whoever waits starts on her own. A
+            // hand-drawn line is a note of the operator, not a connection: nobody walks along a note.
+            if (! isset($this->present[$from], $this->present[$to]) || $from === $to || in_array($e['kind'], self::NOT_A_WAY, true)) {
+                continue;
+            }
+
+            $this->out[$from][] = $e;
+            $incoming[$to] = true;
+        }
+
+        return $incoming;
+    }
+
+    /**
+     * Where a way can begin on this map, for a screen that lets someone choose: every object nothing
+     * points at, with each event its provider names (a lead magnet: asked for; a product: bought).
+     *
+     * @param  list<array{type: string, id: string}>  $nodes
+     * @param  list<array{from_type: string, from_id: string, to_type: string, to_id: string, kind: string}>  $edges
+     * @return list<array{type: string, id: string, event: string, label: string, type_label: string}>
+     */
+    public function starts(array $nodes, array $edges): array
+    {
+        $incoming = $this->prepare($nodes, $edges, null, null, null);
+        $starts = [];
+
+        foreach ($nodes as $n) {
+            $key = $n['type'].':'.$n['id'];
+
+            if (isset($incoming[$key])) {
+                continue;
+            }
+
+            foreach ($this->registry->paths($n['type'], (string) $n['id']) as $event) {
+                $starts[] = ['type' => $n['type'], 'id' => (string) $n['id'], 'event' => $event->type] + $this->labelOf($n['type'], (string) $n['id']);
+            }
+        }
+
+        return $starts;
+    }
+
+    /**
+     * What happens to one known person who starts at one object: every effect in the order it happens,
+     * with the day it falls on. A known person has an answer for every condition, so the way is one
+     * line: no fork after a mail, and the providers decide instead of branching. What a provider cannot
+     * decide it says as "effect unknown", and what the person does with a mail (nothing, by default) is
+     * not asked.
+     *
+     * @param  list<array{type: string, id: string}>  $nodes
+     * @param  list<array{from_type: string, from_id: string, to_type: string, to_id: string, kind: string}>  $edges
+     * @param  array{type: string, id: string, event: string}  $startAt
+     * @return array{entries: list<array<string, mixed>>, stats: array{entries: int, days: list<int>, cut: int}}
+     */
+    public function timeline(array $nodes, array $edges, array $startAt, SimPerson $person, mixed $user = null, ?CarbonImmutable $start = null): array
+    {
+        $this->prepare($nodes, $edges, $person, $user, $start);
+
+        $root = $this->enter($startAt['type'], $startAt['id'], new SimEvent($startAt['event']), $this->context());
+        $entries = [];
+
+        $flatten = function (array $list) use (&$flatten, &$entries): void {
+            foreach ($list as $node) {
+                $entries[] = [
+                    'id' => 'e'.(count($entries) + 1),
+                    'at' => $node['at'],
+                    'day' => intdiv($node['at'], 86400),
+                    'kind' => $node['kind'],
+                    'label' => $node['label'],
+                    'detail' => $node['detail'],
+                    'object' => $node['object'],
+                    'meta' => $node['meta'],
+                ];
+                $flatten($node['children']);
+            }
+        };
+        $flatten($root === null ? [] : [$root]);
+
+        // The way is one line, but a parallel split or a call can interleave: order by the clock, keep the walk's order inside a moment.
+        usort($entries, fn (array $a, array $b) => $a['at'] <=> $b['at']);
+
+        foreach ($entries as $i => $entry) {
+            $entries[$i]['id'] = 'e'.($i + 1);
+        }
+
+        return [
+            'entries' => $entries,
+            'stats' => [
+                'entries' => count($entries),
+                'days' => array_values(array_unique(array_column($entries, 'day'))),
+                'cut' => $this->cut,
+            ],
+        ];
     }
 
     /** @return array{path: list<string>, bought: list<string>, at: int, depth: int, here: ?string} */
@@ -316,7 +411,8 @@ class Simulator
 
         $children = $this->expandList($effect->children, $inner);
 
-        if ($effect->kind === Effect::MAIL) {
+        // A known person does what she does: the fork "opened, clicked, bought, nothing" is for the map of every way.
+        if ($effect->kind === Effect::MAIL && ! $this->person->isKnown()) {
             $children = $this->mailFork($children, $inner);
         }
 
