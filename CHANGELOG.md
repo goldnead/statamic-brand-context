@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.24.0 — 2026-10-21
+
 ### Added: what the test person does, what she was given, and why
 
 - `SimAction` (buy, click, unsubscribe) and `SimPerson::known(actions: …)`: what the operator lets the person do after a mail,
