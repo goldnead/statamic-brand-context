@@ -549,7 +549,7 @@ it('hands the mail of an effect over made safe, whatever the provider wrote', fu
         ->and($mail['blocked_images'])->toBe(1)
         ->and($mail['html'])->toContain('Hallo')
         ->and($mail['html'])->not->toContain('<script')
-        ->and($mail['html'])->not->toContain('src="https://')
+        ->and($mail['html'])->not->toMatch('/\ssrc="/')
         ->and(html_entity_decode($mail['html'], ENT_QUOTES))->toContain("default-src 'none'", 'img-src data:');
 });
 
