@@ -60,6 +60,18 @@ it('keeps a title with commas and a backslashed class name intact', function () 
     expect(SetupStub::$calls[0])->toBe(['Rights, roles and more', ['ghosts_never_migrated', 'widgets']]);
 });
 
+it('translates the title per request, so a cached route does not freeze the locale', function () {
+    app('translator')->addLines(['messages.ghost_nav' => 'Geister'], 'de');
+    app('translator')->addLines(['messages.ghost_nav' => 'Ghosts'], 'en');
+
+    Route::middleware(['web', GuardSetup::using(SetupStub::class, 'messages.ghost_nav', 'ghosts_never_migrated')])
+        ->get('/translated/{ghost}', fn (Ghost $ghost) => 'unreachable');
+
+    app()->setLocale('de');
+
+    $this->get('/translated/1')->assertSee('setup required: Geister', false);
+});
+
 it('refuses a setup class that has no guard method, loudly', function () {
     $this->withoutExceptionHandling();
 

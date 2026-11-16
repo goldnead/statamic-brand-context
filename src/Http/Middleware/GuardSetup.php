@@ -45,7 +45,8 @@ class GuardSetup
      * commas, and a title such as "Rights, roles" would otherwise become two.
      *
      * @param  class-string  $setup  The addon's `Support\Setup`, which has `guard(string $title, string ...$tables)`.
-     * @param  string  $title  The page's own heading, passed on to `guard()`.
+     * @param  string  $title  The page's own heading, passed on to `guard()`. A translation key works and is the better
+     *                         choice: it is translated per request, so a cached route file does not freeze the locale.
      * @param  string  ...$tables  Every table the page's query touches, bound models included.
      */
     public static function using(string $setup, string $title, string ...$tables): string
@@ -65,7 +66,7 @@ class GuardSetup
         }
 
         $run = function (Request $request) use ($next, $guard, $title, $tables): Response {
-            $screen = $guard(rawurldecode($title), ...$tables);
+            $screen = $guard(__(rawurldecode($title)), ...$tables);
 
             if ($screen === null) {
                 return $next($request);
