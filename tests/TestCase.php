@@ -5,6 +5,7 @@ namespace Goldnead\BrandContext\Tests;
 use Goldnead\BrandContext\ServiceProvider;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Orchestra\Testbench\TestCase as Orchestra;
 
@@ -113,5 +114,35 @@ abstract class TestCase extends Orchestra
         config()->set('brand-context.multi_brand', true);
         config()->set('brand-context.license_check', $licenseCheck);
         app('brand-context')->forget();
+    }
+
+    /**
+     * Runs $work against a second, empty in-memory SQLite connection on which
+     * no migration has ever run, and switches the default connection to it for
+     * the duration. Use this instead of dropping a table on the real connection:
+     * DDL commits implicitly under MySQL, which ends the RefreshDatabase
+     * transaction, so the rollback has nothing to undo.
+     */
+    protected function withUnmigratedDatabase(callable $work): mixed
+    {
+        config()->set('database.connections.unmigrated', [
+            'driver' => 'sqlite',
+            'database' => ':memory:',
+            'prefix' => '',
+            'foreign_key_constraints' => false,
+        ]);
+
+        $previous = (string) config('database.default');
+
+        config()->set('database.default', 'unmigrated');
+        DB::setDefaultConnection('unmigrated');
+
+        try {
+            return $work();
+        } finally {
+            config()->set('database.default', $previous);
+            DB::setDefaultConnection($previous);
+            DB::purge('unmigrated');
+        }
     }
 }
