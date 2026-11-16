@@ -11,6 +11,7 @@ use Goldnead\BrandContext\Tests\Fixtures\Widget;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Database\QueryException;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 
@@ -212,6 +213,24 @@ it('warns, and carries on, when the addon guard finds nothing to show although a
     $this->get('/disagree/'.$widget->id)->assertOk()->assertSee('widget '.$widget->id);
 
     Log::shouldHaveReceived('warning')->withArgs(fn (string $message) => str_contains($message, 'ghosts_never_migrated'))->once();
+});
+
+it('checks a list of tables with one query, and still finds the one that is missing', function () {
+    Route::middleware(['web', GuardSetup::using(SetupStub::class, 'Page', 'widgets', 'brands', 'brand_user')])
+        ->get('/three-present', fn () => 'ok');
+    Route::middleware(['web', GuardSetup::using(SetupStub::class, 'Page', 'widgets', 'brands', 'ghosts_never_migrated')])
+        ->get('/one-missing', fn () => 'unreachable');
+
+    DB::enableQueryLog();
+    $this->get('/three-present')->assertOk()->assertSee('ok');
+    $queries = count(DB::getQueryLog());
+    DB::disableQueryLog();
+
+    $this->get('/one-missing')->assertOk()->assertSee('setup required: Page [ghosts_never_migrated]', false);
+
+    // One listing query (SQLite adds a probe of its own), not one per table: three tables, fewer than three.
+    expect($queries)->toBeLessThan(3)
+        ->and(SetupStub::$calls)->toHaveCount(1);
 });
 
 it('lets a database that cannot be reached stay an error, not a setup screen', function () {

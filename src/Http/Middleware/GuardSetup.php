@@ -111,8 +111,17 @@ class GuardSetup
     /** @param  list<string>  $tables */
     private function allTablesExist(array $tables): bool
     {
+        if (count($tables) < 2) {
+            return $tables === [] || Schema::hasTable($tables[0]);
+        }
+
+        // One query for the whole list, not one per table: this runs on every request to a guarded
+        // route, and a page with a query budget (a report, a listing) feels every extra round trip.
+        $existing = array_flip(Schema::getTableListing(schemaQualified: false));
+        $prefix = Schema::getConnection()->getTablePrefix();
+
         foreach ($tables as $table) {
-            if (! Schema::hasTable($table)) {
+            if (! isset($existing[$prefix.$table])) {
                 return false;
             }
         }

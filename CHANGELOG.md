@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed: `GuardSetup` checks a list of tables with one query
+
+The check that runs on every request to a guarded route asked the database once per table. With two or more tables it now reads the table list once
+(`Schema::getTableListing()`, prefix-aware); a single table keeps `Schema::hasTable()`. A page with a query budget (a report, a listing) pays one
+extra query instead of one per table.
+
 ## 1.27.0 — 2026-11-16
 
 ### Added: `GuardSetup` middleware (`brand.setup-guard`), the setup screen for CP detail pages
