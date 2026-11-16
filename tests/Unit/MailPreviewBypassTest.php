@@ -54,6 +54,8 @@ it('does not trust a css value that is written to hide a fetch from a pattern', 
     'image-set with a string' => ['background-image:image-set(\'https://e.test/a\' 1x)'],
     'src function' => ['content:src(\'https://e.test/a\')'],
     'escaped import' => ['@\69mport "https://e.test/x.css";'],
+    'import with no space before the string' => ['@import"https://e.test/x.css";'],
+    'import with a single-quoted string and no space' => ['@import\'https://e.test/x.css\';'],
 ]);
 
 it('still cuts an ordinary url() and an import', function () {

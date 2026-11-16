@@ -2,8 +2,7 @@
 
 ## Unreleased
 
-### Fixed: the `MailPreview` tests read the output by string, which broke on libxml 2.14 and later (no change to the code)
-
+### Fixed: the `MailPreview` tests read the output by string, which broke on libxml 2.14 and later
 CI had been red since 28.10.2026 on three `MailPreview` tests. The runners (ubuntu-26.04) build PHP against libxml 2.15.2; local machines and the
 production container run 2.9.14. Checked by running the unchanged `MailPreview` on both: no fetch gets through on either (about 60 vectors: `src`,
 `srcset`, `lowsrc`, `background`, `url()`, `@import`, `image-set()`, escapes, `<picture>`, `<svg>`, frames, forms, raw text elements). What differs is how
@@ -15,7 +14,11 @@ the parser reads odd markup, which the tests had pinned to 2.9:
 - A style attribute whose value contains its own double quotes (`@\69mport "…"`) was never a well-formed attribute; 2.15 turns the pieces into attribute
   names. The test now escapes the value.
 
-No change to `src/`; the preview's second layer (CSP `img-src data:`, sandboxed frame) is unchanged.
+### Fixed: `@import"…"` without a space was not cut by the first layer (all libxml versions)
+
+`prepare()` cut `@import` only when whitespace followed it; CSS allows `@import"https://…";` and `@import'…';`. The text stayed in the prepared
+HTML. The frame's CSP (`default-src 'none'`) still blocked the fetch, so nothing loaded in the preview, but the first layer is meant to hold alone.
+It now cuts the import whatever follows the keyword.
 
 ## 1.27.0 — 2026-11-16
 
