@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.27.1 — 2026-11-16
+
 ### Fixed: the `MailPreview` tests read the output by string, which broke on libxml 2.14 and later
 CI had been red since 28.10.2026 on three `MailPreview` tests. The runners (ubuntu-26.04) build PHP against libxml 2.15.2; local machines and the
 production container run 2.9.14. Checked by running the unchanged `MailPreview` on both: no fetch gets through on either (about 60 vectors: `src`,
