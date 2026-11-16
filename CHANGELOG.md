@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added: `GuardSetup` middleware (`brand.setup-guard`), the setup screen for CP detail pages
+
+A listing guards a missing table with `Setup::guard()` and shows a sentence instead of an HTTP 500. A detail route that takes its model by type
+hint (`edit(Funnel $funnel)`) never got that: `SubstituteBindings` runs the query before the method begins, and the query is what throws.
+`GuardSetup::using(Setup::class, 'Funnels', 'funnels', 'funnel_steps')` is the middleware string for such a route. It asks the addon's own
+`Setup::guard()` first, so the detail page shows the same screen as the listing and the reason still goes to the log. The package registers it
+ahead of `SubstituteBindings` in the kernel's middleware priority, which is what a route-level middleware needs to run before the binding.
+
+- In the Control Panel it runs behind Statamic's login check (`AuthGuard`, `Authorize`): a stranger gets the login redirect, not the table names.
+- It renders nothing itself. The screen, its translations and the log line stay in the addon.
+- A database that is down is still a 500: that is an outage, not an unfinished setup.
+- A setup class without a public static `guard()` throws `InvalidArgumentException` on the first request, not a silent pass.
+
 ## 1.26.0 — 2026-10-21
 
 ### Added: `PersonSources::describe()`, which sources did not speak

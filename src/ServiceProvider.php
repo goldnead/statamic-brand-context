@@ -5,6 +5,7 @@ namespace Goldnead\BrandContext;
 use Goldnead\BrandContext\Contracts\BrandTokenResolver;
 use Goldnead\BrandContext\Contracts\SenderIdentityResolver;
 use Goldnead\BrandContext\Contracts\UserSource;
+use Goldnead\BrandContext\Http\Middleware\GuardSetup;
 use Goldnead\BrandContext\Http\Middleware\ResolveBrandFromToken;
 use Goldnead\BrandContext\Http\Middleware\SetBrandForSite;
 use Goldnead\BrandContext\Http\Middleware\SetBrandFromSession;
@@ -17,6 +18,7 @@ use Goldnead\BrandContext\Settings\SettingsNavChild;
 use Goldnead\BrandContext\Settings\SettingsNavSuite;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
 use Goldnead\BrandContext\Simulation\PersonSources;
+use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Event;
@@ -233,6 +235,16 @@ class ServiceProvider extends BaseServiceProvider
         $router->aliasMiddleware('brand.token', ResolveBrandFromToken::class);
         $router->aliasMiddleware('brand.session', SetBrandFromSession::class);
         $router->aliasMiddleware('brand.site', SetBrandForSite::class);
+        $router->aliasMiddleware(GuardSetup::ALIAS, GuardSetup::class);
+
+        // A route-level middleware is sorted behind SubstituteBindings unless the
+        // priority list says otherwise, and behind it is too late: the bound
+        // model's query has already thrown. The kernel is what owns that list.
+        $kernel = $this->app->make(Kernel::class);
+
+        if (method_exists($kernel, 'addToMiddlewarePriorityBefore')) {
+            $kernel->addToMiddlewarePriorityBefore(SubstituteBindings::class, GuardSetup::class);
+        }
     }
 
     /**
