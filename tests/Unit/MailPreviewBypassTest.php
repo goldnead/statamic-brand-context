@@ -56,6 +56,8 @@ it('does not trust a css value that is written to hide a fetch from a pattern', 
     'escaped import' => ['@\69mport "https://e.test/x.css";'],
     'import with no space before the string' => ['@import"https://e.test/x.css";'],
     'import with a single-quoted string and no space' => ['@import\'https://e.test/x.css\';'],
+    'import with a newline before the string' => ["@import\n\"https://e.test/x.css\";"],
+    'import with a carriage return and newline before the string' => ["@import\r\n\"https://e.test/x.css\";"],
 ]);
 
 it('still cuts an ordinary url() and an import', function () {
