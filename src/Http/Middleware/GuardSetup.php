@@ -163,7 +163,10 @@ class GuardSetup
             : [];
 
         // Aliases and nested groups in these lists are expanded the way the router would, `class:parameters` strings stay as they are.
-        $resolved = app('router')->resolveMiddleware([...$behindBindings, ...$authenticated]);
+        $resolved = app('router')->resolveMiddleware(
+            [...$behindBindings, ...$authenticated],
+            $request->route()?->excludedMiddleware() ?? []
+        );
 
         return array_values(array_filter(
             $resolved,
