@@ -17,9 +17,19 @@ it('blocks a source whichever element wears it, and counts the image', function 
     'input without type image' => ['<input src="https://e.test/p.gif">', 1],
     'input type image' => ['<input type="image" src="https://e.test/p.gif">', 1],
     'lowsrc and dynsrc' => ['<img lowsrc="https://e.test/a" dynsrc="https://e.test/b">', 1],
-    'picture with source goes with its source' => ['<picture><source srcset="https://e.test/a.webp"><img src="https://e.test/a.png"></picture>', 0],
     'a script src is gone with the script' => ['<script src="https://e.test/x.js"></script>', 0],
 ]);
+
+it('takes the source of a picture and of the image inside it', function () {
+    $out = MailPreview::prepare('<p>x</p><picture><source srcset="https://e.test/a.webp"><img src="https://e.test/a.png"></picture>');
+
+    // libxml 2.9 drops the img inside a picture (nothing to count), libxml 2.14 and later keep it and block it (one).
+    // Either way the address is not in an attribute that loads.
+    expect($out['blocked_images'])->toBeIn([0, 1])
+        ->and($out['html'])->not->toMatch('/\s(src|lowsrc|dynsrc|srcset)="/')
+        ->and($out['html'])->not->toContain('<source')
+        ->and(preg_replace('/ data-sim-src="[^"]*"/', '', $out['html']))->not->toContain('e.test');
+});
 
 it('removes the elements that are fetches of their own', function (string $markup) {
     expect(strtolower(MailPreview::prepare('<p>x</p>'.$markup)['html']))->not->toMatch('/<(fencedframe|portal|bgsound|keygen)/');
@@ -31,7 +41,9 @@ it('removes the elements that are fetches of their own', function (string $marku
 ]);
 
 it('does not trust a css value that is written to hide a fetch from a pattern', function (string $style) {
-    $out = MailPreview::prepare('<div style="'.$style.'">Text</div><style>'.$style.'</style>')['html'];
+    // The value goes into the attribute as an attribute value: its own double quotes (the import) would end it, and what
+    // is left reads differently by libxml version (2.15 makes attributes of the pieces, 2.9 drops them).
+    $out = MailPreview::prepare('<div style="'.htmlspecialchars($style, ENT_QUOTES).'">Text</div><style>'.$style.'</style>')['html'];
 
     expect($out)->not->toContain('e.test')
         ->and($out)->toContain('Text');
