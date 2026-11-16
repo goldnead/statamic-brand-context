@@ -1,13 +1,17 @@
 <?php
 
 use Goldnead\BrandContext\Http\Middleware\GuardSetup;
+use Goldnead\BrandContext\ServiceProvider;
 use Goldnead\BrandContext\Tests\Fixtures\Ghost;
 use Goldnead\BrandContext\Tests\Fixtures\RecordsOrder;
 use Goldnead\BrandContext\Tests\Fixtures\SetupStub;
+use Goldnead\BrandContext\Tests\Fixtures\SetupStubReturningNull;
 use Goldnead\BrandContext\Tests\Fixtures\SetupStubReturningString;
 use Goldnead\BrandContext\Tests\Fixtures\Widget;
+use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Database\QueryException;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -152,6 +156,39 @@ it('keeps a bound model that does not exist a 404 once the screen is not needed'
         ->get('/missing/{widget}', fn (Widget $widget) => 'unreachable');
 
     $this->get('/missing/424242')->assertNotFound();
+});
+
+it('is placed ahead of SubstituteBindings in the router priority list, once', function () {
+    // The router's list is filled when the HTTP kernel is built; a request builds it.
+    app(Kernel::class);
+    $priority = app('router')->middlewarePriority;
+
+    expect(array_keys($priority, GuardSetup::class, true))->toHaveCount(1)
+        ->and(array_search(GuardSetup::class, $priority, true))->toBeLessThan(array_search(SubstituteBindings::class, $priority, true));
+});
+
+it('does not drop a middleware another package pushed into a group when the provider registers again', function () {
+    app(Kernel::class);
+    app('router')->pushMiddlewareToGroup('web', 'Some\\Other\\Package\\Middleware');
+
+    $register = new ReflectionMethod(ServiceProvider::class, 'registerMiddleware');
+    $register->invoke(new ServiceProvider(app()));
+
+    expect(app('router')->getMiddlewareGroups()['web'])->toContain('Some\\Other\\Package\\Middleware')
+        ->and(array_keys(app('router')->middlewarePriority, GuardSetup::class, true))->toHaveCount(1);
+});
+
+it('warns, and carries on, when the addon guard finds nothing to show although a listed table is missing', function () {
+    Log::spy();
+    $this->withoutExceptionHandling();
+    Route::middleware(['web', GuardSetup::using(SetupStubReturningNull::class, 'Page', 'widgets', 'ghosts_never_migrated')])
+        ->get('/disagree/{widget}', fn (Widget $widget) => 'widget '.$widget->id);
+
+    $widget = Widget::create(['email' => 'd@example.com']);
+
+    $this->get('/disagree/'.$widget->id)->assertOk()->assertSee('widget '.$widget->id);
+
+    Log::shouldHaveReceived('warning')->withArgs(fn (string $message) => str_contains($message, 'ghosts_never_migrated'))->once();
 });
 
 it('lets a database that cannot be reached stay an error, not a setup screen', function () {

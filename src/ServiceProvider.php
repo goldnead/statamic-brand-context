@@ -18,8 +18,9 @@ use Goldnead\BrandContext\Settings\SettingsNavChild;
 use Goldnead\BrandContext\Settings\SettingsNavSuite;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
 use Goldnead\BrandContext\Simulation\PersonSources;
-use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Routing\Router;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
@@ -239,29 +240,58 @@ class ServiceProvider extends BaseServiceProvider
 
         // A route-level middleware is sorted behind SubstituteBindings unless the
         // priority list says otherwise, and behind it is too late: the bound
-        // model's query has already thrown. The kernel is what owns that list.
-        $kernel = $this->app->make(Kernel::class);
+        // model's query has already thrown. The list is changed on the router
+        // itself. The kernel's addToMiddlewarePriorityBefore() would do the same,
+        // but it re-registers the kernel's middleware groups on the router as it
+        // goes, which drops whatever another package pushed into `web` or `api` before us.
+        //
+        // The router's list is the kernel's, copied over when the kernel is built. In a
+        // running application that has happened before any provider boots; under
+        // Testbench, and wherever the kernel is built later, the copy would overwrite
+        // an entry made earlier. So: now if the kernel is there, else right after it is.
+        $settle = function () use ($router) {
+            $this->placeGuardAheadOfBindings($router);
 
-        if (method_exists($kernel, 'addToMiddlewarePriorityBefore')) {
-            $kernel->addToMiddlewarePriorityBefore(SubstituteBindings::class, GuardSetup::class);
-        }
+            if (! $this->guardIsAheadOfBindings($router)) {
+                // Silence would bring the HTTP 500 back on every detail page of every addon, and look like an addon bug.
+                $message = 'brand-context: the setup guard could not be placed ahead of SubstituteBindings in the middleware '
+                    .'priority list (a priority list without SubstituteBindings). Detail pages '
+                    .'whose tables are missing will fail in route-model binding instead of showing the setup screen.';
 
-        $priority = method_exists($kernel, 'getMiddlewarePriority') ? $kernel->getMiddlewarePriority() : [];
-        $guardAt = array_search(GuardSetup::class, $priority, true);
-        $bindingsAt = array_search(SubstituteBindings::class, $priority, true);
+                if ($this->app->environment('local', 'testing')) {
+                    throw new \RuntimeException($message);
+                }
 
-        if ($guardAt === false || $bindingsAt === false || $guardAt > $bindingsAt) {
-            // Silence here would bring the HTTP 500 back on every detail page of every addon, and look like an addon bug.
-            $message = 'brand-context: the setup guard could not be placed ahead of SubstituteBindings in the middleware '
-                .'priority list (a custom HTTP kernel, or a priority list without SubstituteBindings). Detail pages '
-                .'whose tables are missing will fail in route-model binding instead of showing the setup screen.';
-
-            if ($this->app->environment('local', 'testing')) {
-                throw new \RuntimeException($message);
+                report(new \RuntimeException($message));
             }
+        };
 
-            report(new \RuntimeException($message));
+        if ($this->app->resolved(HttpKernel::class)) {
+            $settle();
+        } else {
+            $this->app->afterResolving(HttpKernel::class, fn () => $settle());
         }
+    }
+
+    protected function placeGuardAheadOfBindings(Router $router): void
+    {
+        $priority = array_values(array_filter($router->middlewarePriority, fn ($m) => $m !== GuardSetup::class));
+        $at = array_search(SubstituteBindings::class, $priority, true);
+
+        if ($at === false) {
+            return;
+        }
+
+        array_splice($priority, $at, 0, [GuardSetup::class]);
+        $router->middlewarePriority = $priority;
+    }
+
+    protected function guardIsAheadOfBindings(Router $router): bool
+    {
+        $guardAt = array_search(GuardSetup::class, $router->middlewarePriority, true);
+        $bindingsAt = array_search(SubstituteBindings::class, $router->middlewarePriority, true);
+
+        return $guardAt !== false && $bindingsAt !== false && $guardAt < $bindingsAt;
     }
 
     /**

@@ -10,6 +10,7 @@ use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Http\Request;
 use Illuminate\Pipeline\Pipeline;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\Response;
@@ -74,10 +75,20 @@ class GuardSetup
             return $next($request);
         }
 
-        $run = function (Request $request) use ($next, $guard, $title, $tables): Response {
+        $run = function (Request $request) use ($next, $guard, $setup, $title, $tables): Response {
             $screen = $guard(__(rawurldecode($title)), ...$tables);
 
             if ($screen === null) {
+                // The tables passed to using() say one is missing and the addon's own guard says the page can run. The
+                // request goes on, and the Control Panel middleware that ran above run a second time, behind the binding.
+                // The list belongs in step with the guard's (config-dependent lists have to be spread in at registration).
+                Log::warning(sprintf(
+                    'brand-context: the setup guard on [%s] found a missing table among [%s], but %s::guard() found nothing to show.',
+                    $request->path(),
+                    implode(', ', $tables),
+                    $setup
+                ));
+
                 return $next($request);
             }
 
@@ -141,11 +152,14 @@ class GuardSetup
         $at = array_search(SubstituteBindings::class, $cp, true);
         $behindBindings = $at === false ? [] : array_slice($cp, $at + 1);
 
+        // Aliases and nested groups in these lists are expanded the way the router would, `class:parameters` strings stay as they are.
+        $resolved = app('router')->resolveMiddleware([...$behindBindings, ...($groups['statamic.cp.authenticated'] ?? [])]);
+
         return array_values(array_filter(
-            [...$behindBindings, ...($groups['statamic.cp.authenticated'] ?? [])],
+            $resolved,
             fn ($middleware) => is_string($middleware)
-                && ! is_subclass_of($middleware, AuthenticatesSessions::class)
-                && ! is_subclass_of($middleware, AuthenticatesRequests::class)
+                && ! is_subclass_of(strtok($middleware, ':'), AuthenticatesSessions::class)
+                && ! is_subclass_of(strtok($middleware, ':'), AuthenticatesRequests::class)
         ));
     }
 }
