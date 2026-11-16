@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Added: `GuardSetup` middleware (`brand.setup-guard`), the setup screen for CP detail pages
+
+A listing guards a missing table with `Setup::guard()` and shows a sentence instead of an HTTP 500. A detail route that takes its model by type
+hint (`edit(Funnel $funnel)`) never got that: `SubstituteBindings` runs the query before the method begins, and the query is what throws.
+`GuardSetup::using(Setup::class, 'Funnels', 'funnels', 'funnel_steps')` is the middleware string for such a route. It asks the addon's own
+`Setup::guard()` first, so the detail page shows the same screen as the listing and the reason still goes to the log. The package registers it
+ahead of `SubstituteBindings` in the kernel's middleware priority, which is what a route-level middleware needs to run before the binding.
+
+- On a migrated install it costs one table check and nothing else. Only when a table is missing does it act, and then, in the Control Panel, it
+  first runs what its position makes the request skip: what follows `SubstituteBindings` in the `statamic.cp` group, then the whole
+  `statamic.cp.authenticated` group. So the login check, locale, permissions and the shared navigation are in place, a stranger gets the login
+  redirect instead of the table names, and the guard writes no log line for anonymous requests.
+- Known limit: the route's own `can:` middleware runs after the binding, so a user who may open the Control Panel but not this page sees the setup
+  screen (and the table names) on an unmigrated install, where the listing would have said 403.
+- The tables passed to `using()` are the check; the addon's `guard()` decides what the screen is. List the tables the page's query touches.
+- It renders nothing itself. The screen, its translations and the log line stay in the addon.
+- If the kernel's priority list cannot take it ahead of `SubstituteBindings` (a custom HTTP kernel), the provider reports it (and throws in `local` and `testing`).
+- A database that is down is still a 500: that is an outage, not an unfinished setup.
+- A setup class without a public static `guard()` throws `InvalidArgumentException` on the first request, not a silent pass.
+
 ## 1.26.0 — 2026-10-21
 
 ### Added: `PersonSources::describe()`, which sources did not speak
