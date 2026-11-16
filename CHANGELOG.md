@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.27.0 — 2026-11-16
+
 ### Added: `GuardSetup` middleware (`brand.setup-guard`), the setup screen for CP detail pages
 
 A listing guards a missing table with `Setup::guard()` and shows a sentence instead of an HTTP 500. A detail route that takes its model by type
@@ -12,7 +14,7 @@ ahead of `SubstituteBindings` in the kernel's middleware priority, which is what
 
 - On a migrated install it costs one table check and nothing else. Only when a table is missing does it act, and then, in the Control Panel, it
   first runs what its position makes the request skip: what follows `SubstituteBindings` in the `statamic.cp` group, then the whole
-  `statamic.cp.authenticated` group. So the login check, locale, permissions and the shared navigation are in place, a stranger gets the login
+  `statamic.cp.authenticated` group (only those the route itself carries). So the login check, locale, permissions and the shared navigation are in place, a stranger gets the login
   redirect instead of the table names, and the guard writes no log line for anonymous requests.
 - Known limit: the route's own `can:` middleware runs after the binding, so a user who may open the Control Panel but not this page sees the setup
   screen (and the table names) on an unmigrated install, where the listing would have said 403.
