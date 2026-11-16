@@ -118,6 +118,16 @@ it('in the control panel runs what it skips before it shows the screen, once eac
     expect(RecordsOrder::$log)->toBe(['cp-before', 'cp-after', 'login-check', 'nav', 'guard']);
 });
 
+it('replays nothing for a route that does not carry the control panel groups, even where the groups exist', function () {
+    fakeControlPanel();
+    Route::middleware(['web', GuardSetup::using(SetupStub::class, 'Page', 'ghosts_never_migrated')])
+        ->get('/not-cp/ghost/{ghost}', fn (Ghost $ghost) => 'unreachable');
+
+    $this->get('/not-cp/ghost/1')->assertOk()->assertSee('setup required: Page', false);
+
+    expect(RecordsOrder::$log)->toBe(['guard']);
+});
+
 it('leaves a migrated install to the normal pipeline: nothing runs twice, the guard is never asked', function () {
     fakeControlPanel();
     Route::middleware(['statamic.cp', 'statamic.cp.authenticated', GuardSetup::using(SetupStub::class, 'Page', 'widgets')])
@@ -161,6 +171,19 @@ it('keeps a bound model that does not exist a 404 once the screen is not needed'
 it('is placed ahead of SubstituteBindings in the router priority list, once', function () {
     // The router's list is filled when the HTTP kernel is built; a request builds it.
     app(Kernel::class);
+    $priority = app('router')->middlewarePriority;
+
+    expect(array_keys($priority, GuardSetup::class, true))->toHaveCount(1)
+        ->and(array_search(GuardSetup::class, $priority, true))->toBeLessThan(array_search(SubstituteBindings::class, $priority, true));
+});
+
+it('stays ahead of SubstituteBindings when another package makes the kernel sync its priority list afterwards', function () {
+    // Statamic's API provider does exactly this while booting, after brand-context has booted:
+    // any group or priority method of the kernel copies the kernel's own list over the router's.
+    $kernel = app(Kernel::class);
+    $kernel->appendMiddlewareToGroup('web', 'Some\\Other\\Package\\Middleware');
+    $kernel->appendToMiddlewarePriority('Some\\Other\\Package\\Middleware');
+
     $priority = app('router')->middlewarePriority;
 
     expect(array_keys($priority, GuardSetup::class, true))->toHaveCount(1)

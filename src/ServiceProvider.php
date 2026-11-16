@@ -245,12 +245,15 @@ class ServiceProvider extends BaseServiceProvider
         // but it re-registers the kernel's middleware groups on the router as it
         // goes, which drops whatever another package pushed into `web` or `api` before us.
         //
-        // The router's list is the kernel's, copied over when the kernel is built. In a
-        // running application that has happened before any provider boots; under
-        // Testbench, and wherever the kernel is built later, the copy would overwrite
-        // an entry made earlier. So: now if the kernel is there, else right after it is.
+        // The router's list is the kernel's, copied over whenever the kernel syncs: when it is
+        // built, and again whenever any package calls one of its group or priority methods
+        // (Statamic's API provider does, after this one has booted). An entry made on the
+        // router alone would be overwritten by the next sync, so it is made in the kernel's
+        // own list too, which is only a property write: no sync, no reset of the groups.
+        // Now if the kernel is there, else right after it is built.
         $settle = function () use ($router) {
             $this->placeGuardAheadOfBindings($router);
+            $this->placeGuardInKernel();
 
             if (! $this->guardIsAheadOfBindings($router)) {
                 // Silence would bring the HTTP 500 back on every detail page of every addon, and look like an addon bug.
@@ -284,6 +287,30 @@ class ServiceProvider extends BaseServiceProvider
 
         array_splice($priority, $at, 0, [GuardSetup::class]);
         $router->middlewarePriority = $priority;
+    }
+
+    protected function placeGuardInKernel(): void
+    {
+        if (! $this->app->resolved(HttpKernel::class)) {
+            return;
+        }
+
+        $kernel = $this->app->make(HttpKernel::class);
+
+        if (! property_exists($kernel, 'middlewarePriority')) {
+            return;
+        }
+
+        // The property is protected on Illuminate's kernel; a closure bound to the instance may write it.
+        (function () {
+            $priority = array_values(array_filter($this->middlewarePriority, fn ($m) => $m !== GuardSetup::class));
+            $at = array_search(SubstituteBindings::class, $priority, true);
+
+            if ($at !== false) {
+                array_splice($priority, $at, 0, [GuardSetup::class]);
+                $this->middlewarePriority = $priority;
+            }
+        })->call($kernel);
     }
 
     protected function guardIsAheadOfBindings(Router $router): bool

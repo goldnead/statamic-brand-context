@@ -99,7 +99,7 @@ class GuardSetup
             return $screen instanceof Response ? $screen : response($screen);
         };
 
-        $skipped = $this->skippedControlPanelMiddleware();
+        $skipped = $this->skippedControlPanelMiddleware($request);
 
         if ($skipped === []) {
             return $run($request);
@@ -135,31 +135,41 @@ class GuardSetup
      * Those that the kernel's priority list has already moved ahead of this
      * middleware (the session and authentication ones) are not run twice.
      *
-     * Empty where Statamic's Control Panel is not booted (a plain Laravel
-     * context, this package's own tests).
+     * Only the groups the route itself carries are replayed. Empty for a route
+     * outside the Control Panel, and where Statamic's Control Panel is not
+     * booted (a plain Laravel context, this package's own tests).
      *
      * @return list<string>
      */
-    private function skippedControlPanelMiddleware(): array
+    private function skippedControlPanelMiddleware(Request $request): array
     {
         $groups = app('router')->getMiddlewareGroups();
 
-        if (! isset($groups['statamic.cp'])) {
-            return [];
+        // Only what this route itself carries: a route that is not in the Control Panel's groups (a test
+        // route, a route registered some other way) skipped nothing, and replaying the groups for it would
+        // run middleware that expects a Control Panel request.
+        $carried = $request->route()?->gatherMiddleware() ?? [];
+
+        $behindBindings = [];
+
+        if (in_array('statamic.cp', $carried, true) && isset($groups['statamic.cp'])) {
+            $cp = $groups['statamic.cp'];
+            $at = array_search(SubstituteBindings::class, $cp, true);
+            $behindBindings = $at === false ? [] : array_slice($cp, $at + 1);
         }
 
-        $cp = $groups['statamic.cp'];
-        $at = array_search(SubstituteBindings::class, $cp, true);
-        $behindBindings = $at === false ? [] : array_slice($cp, $at + 1);
+        $authenticated = in_array('statamic.cp.authenticated', $carried, true)
+            ? ($groups['statamic.cp.authenticated'] ?? [])
+            : [];
 
         // Aliases and nested groups in these lists are expanded the way the router would, `class:parameters` strings stay as they are.
-        $resolved = app('router')->resolveMiddleware([...$behindBindings, ...($groups['statamic.cp.authenticated'] ?? [])]);
+        $resolved = app('router')->resolveMiddleware([...$behindBindings, ...$authenticated]);
 
         return array_values(array_filter(
             $resolved,
-            fn ($middleware) => is_string($middleware)
-                && ! is_subclass_of(strtok($middleware, ':'), AuthenticatesSessions::class)
-                && ! is_subclass_of(strtok($middleware, ':'), AuthenticatesRequests::class)
+            fn ($middleware) => ! is_string($middleware)
+                || (! is_subclass_of(strtok($middleware, ':'), AuthenticatesSessions::class)
+                    && ! is_subclass_of(strtok($middleware, ':'), AuthenticatesRequests::class))
         ));
     }
 }
