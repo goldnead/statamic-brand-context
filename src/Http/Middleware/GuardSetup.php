@@ -4,11 +4,14 @@ namespace Goldnead\BrandContext\Http\Middleware;
 
 use Closure;
 use Goldnead\BrandContext\ServiceProvider;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
+use Illuminate\Contracts\Session\Middleware\AuthenticatesSessions;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Http\Request;
+use Illuminate\Pipeline\Pipeline;
+use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
-use Statamic\Http\Middleware\CP\AuthGuard;
-use Statamic\Http\Middleware\CP\Authorize;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -65,6 +68,12 @@ class GuardSetup
             ));
         }
 
+        // The common case, a migrated install, costs one table check and nothing else:
+        // no login, no log line, the request goes on as if this middleware were not here.
+        if ($this->allTablesExist($tables)) {
+            return $next($request);
+        }
+
         $run = function (Request $request) use ($next, $guard, $title, $tables): Response {
             $screen = $guard(__(rawurldecode($title)), ...$tables);
 
@@ -72,32 +81,71 @@ class GuardSetup
                 return $next($request);
             }
 
-            return $screen instanceof Responsable ? $screen->toResponse($request) : $screen;
+            if ($screen instanceof Responsable) {
+                return $screen->toResponse($request);
+            }
+
+            return $screen instanceof Response ? $screen : response($screen);
         };
 
-        return $this->behindControlPanelLogin($request, $run);
-    }
+        $skipped = $this->skippedControlPanelMiddleware();
 
-    /**
-     * Ahead of `SubstituteBindings` also means ahead of the login check, which
-     * Statamic's `Authorize` middleware makes after it. Without this, a
-     * stranger would be shown the setup screen (and the table names on it) for
-     * a page behind the login, and the guard would write a log line on every
-     * anonymous request. Where Statamic's CP is not booted (a plain Laravel
-     * context, the tests of this package) there is nothing to ask.
-     */
-    private function behindControlPanelLogin(Request $request, Closure $run): Response
-    {
-        $isControlPanel = class_exists(Authorize::class)
-            && array_key_exists('statamic.cp', app('router')->getMiddlewareGroups());
-
-        if (! $isControlPanel) {
+        if ($skipped === []) {
             return $run($request);
         }
 
-        return app(AuthGuard::class)->handle(
-            $request,
-            fn (Request $request) => app(Authorize::class)->handle($request, $run)
-        );
+        return (new Pipeline(app()))->send($request)->through($skipped)->then($run);
+    }
+
+    /** @param  list<string>  $tables */
+    private function allTablesExist(array $tables): bool
+    {
+        foreach ($tables as $table) {
+            if (! Schema::hasTable($table)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * What this middleware's position makes the request skip, in the Control Panel.
+     *
+     * Ahead of `SubstituteBindings` also means ahead of everything Statamic puts
+     * behind it: the login check (`Authorize`), the locale, the permissions, and
+     * `HandleAuthenticatedInertiaRequests`, which shares the navigation with the
+     * page. A setup screen that short-circuits without them would show a stranger
+     * the table names, write a log line for every anonymous request, answer in the
+     * wrong language and arrive without the sidebar. So when the screen is going
+     * to be shown, the same middleware the listing runs is run first, in the
+     * order Statamic defines them: what follows `SubstituteBindings` in the
+     * `statamic.cp` group, then the whole `statamic.cp.authenticated` group.
+     * Those that the kernel's priority list has already moved ahead of this
+     * middleware (the session and authentication ones) are not run twice.
+     *
+     * Empty where Statamic's Control Panel is not booted (a plain Laravel
+     * context, this package's own tests).
+     *
+     * @return list<string>
+     */
+    private function skippedControlPanelMiddleware(): array
+    {
+        $groups = app('router')->getMiddlewareGroups();
+
+        if (! isset($groups['statamic.cp'])) {
+            return [];
+        }
+
+        $cp = $groups['statamic.cp'];
+        $at = array_search(SubstituteBindings::class, $cp, true);
+        $behindBindings = $at === false ? [] : array_slice($cp, $at + 1);
+
+        return array_values(array_filter(
+            [...$behindBindings, ...($groups['statamic.cp.authenticated'] ?? [])],
+            fn ($middleware) => is_string($middleware)
+                && ! is_subclass_of($middleware, AuthenticatesSessions::class)
+                && ! is_subclass_of($middleware, AuthenticatesRequests::class)
+        ));
     }
 }

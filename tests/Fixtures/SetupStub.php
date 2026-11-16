@@ -17,6 +17,7 @@ final class SetupStub
     public static function guard(string $title, string ...$tables): ?Response
     {
         self::$calls[] = [$title, $tables];
+        RecordsOrder::$log[] = 'guard';
 
         $missing = array_values(array_filter($tables, fn (string $t) => ! Schema::hasTable($t)));
 

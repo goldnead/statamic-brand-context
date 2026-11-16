@@ -245,6 +245,23 @@ class ServiceProvider extends BaseServiceProvider
         if (method_exists($kernel, 'addToMiddlewarePriorityBefore')) {
             $kernel->addToMiddlewarePriorityBefore(SubstituteBindings::class, GuardSetup::class);
         }
+
+        $priority = method_exists($kernel, 'getMiddlewarePriority') ? $kernel->getMiddlewarePriority() : [];
+        $guardAt = array_search(GuardSetup::class, $priority, true);
+        $bindingsAt = array_search(SubstituteBindings::class, $priority, true);
+
+        if ($guardAt === false || $bindingsAt === false || $guardAt > $bindingsAt) {
+            // Silence here would bring the HTTP 500 back on every detail page of every addon, and look like an addon bug.
+            $message = 'brand-context: the setup guard could not be placed ahead of SubstituteBindings in the middleware '
+                .'priority list (a custom HTTP kernel, or a priority list without SubstituteBindings). Detail pages '
+                .'whose tables are missing will fail in route-model binding instead of showing the setup screen.';
+
+            if ($this->app->environment('local', 'testing')) {
+                throw new \RuntimeException($message);
+            }
+
+            report(new \RuntimeException($message));
+        }
     }
 
     /**

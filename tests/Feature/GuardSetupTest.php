@@ -2,9 +2,12 @@
 
 use Goldnead\BrandContext\Http\Middleware\GuardSetup;
 use Goldnead\BrandContext\Tests\Fixtures\Ghost;
+use Goldnead\BrandContext\Tests\Fixtures\RecordsOrder;
 use Goldnead\BrandContext\Tests\Fixtures\SetupStub;
+use Goldnead\BrandContext\Tests\Fixtures\SetupStubReturningString;
 use Goldnead\BrandContext\Tests\Fixtures\Widget;
 use Illuminate\Database\QueryException;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -14,6 +17,8 @@ use Illuminate\Support\Facades\Route;
  */
 beforeEach(function () {
     SetupStub::$calls = [];
+    RecordsOrder::$log = [];
+    RecordsOrder::$refuse = [];
 
     // The unguarded route: today's behaviour, and the reason the middleware exists.
     Route::middleware('web')->get('/bare/{ghost}', fn (Ghost $ghost) => 'unreachable');
@@ -79,4 +84,95 @@ it('refuses a setup class that has no guard method, loudly', function () {
         ->get('/broken/{widget}', fn (Widget $widget) => 'unreachable');
 
     expect(fn () => $this->get('/broken/1'))->toThrow(InvalidArgumentException::class);
+});
+
+/*
+ * In the Control Panel, "before SubstituteBindings" is also "before the login check and the
+ * navigation". These groups copy the shape of Statamic's (`statamic.cp` with SubstituteBindings in
+ * the middle, `statamic.cp.authenticated` after it), with middleware that write their names into a log.
+ */
+function fakeControlPanel(): void
+{
+    app('router')->middlewareGroup('statamic.cp', [
+        RecordsOrder::class.':cp-before',
+        SubstituteBindings::class,
+        RecordsOrder::class.':cp-after',
+    ]);
+    app('router')->middlewareGroup('statamic.cp.authenticated', [
+        RecordsOrder::class.':login-check',
+        RecordsOrder::class.':nav',
+    ]);
+}
+
+it('in the control panel runs what it skips before it shows the screen, once each, in the order of the groups', function () {
+    fakeControlPanel();
+    Route::middleware(['statamic.cp', 'statamic.cp.authenticated', GuardSetup::using(SetupStub::class, 'Page', 'ghosts_never_migrated')])
+        ->get('/cp/ghost/{ghost}', fn (Ghost $ghost) => 'unreachable');
+
+    $this->get('/cp/ghost/1')->assertOk()->assertSee('setup required: Page', false);
+
+    expect(RecordsOrder::$log)->toBe(['cp-before', 'cp-after', 'login-check', 'nav', 'guard']);
+});
+
+it('leaves a migrated install to the normal pipeline: nothing runs twice, the guard is never asked', function () {
+    fakeControlPanel();
+    Route::middleware(['statamic.cp', 'statamic.cp.authenticated', GuardSetup::using(SetupStub::class, 'Page', 'widgets')])
+        ->get('/cp/widget/{widget}', fn (Widget $widget) => 'widget '.$widget->id);
+
+    $widget = Widget::create(['email' => 'cp@example.com']);
+
+    $this->get('/cp/widget/'.$widget->id)->assertOk()->assertSee('widget '.$widget->id);
+
+    expect(RecordsOrder::$log)->toBe(['cp-before', 'cp-after', 'login-check', 'nav'])
+        ->and(SetupStub::$calls)->toBe([]);
+});
+
+it('does not show the screen or write the log line to somebody the login check refuses', function () {
+    fakeControlPanel();
+    RecordsOrder::$refuse = ['login-check'];
+    Route::middleware(['statamic.cp', 'statamic.cp.authenticated', GuardSetup::using(SetupStub::class, 'Page', 'ghosts_never_migrated')])
+        ->get('/cp/ghost/{ghost}', fn (Ghost $ghost) => 'unreachable');
+
+    $this->get('/cp/ghost/1', ['Accept' => 'application/json'])->assertUnauthorized();
+
+    expect(SetupStub::$calls)->toBe([])
+        ->and(RecordsOrder::$log)->not->toContain('guard')
+        ->and(RecordsOrder::$log)->not->toContain('nav');
+});
+
+it('turns a guard that answers with something other than a response into one', function () {
+    Route::middleware(['web', GuardSetup::using(SetupStubReturningString::class, 'Page', 'ghosts_never_migrated')])
+        ->get('/stringy/{ghost}', fn (Ghost $ghost) => 'unreachable');
+
+    $this->get('/stringy/1')->assertOk()->assertSee('plain text screen');
+});
+
+it('keeps a bound model that does not exist a 404 once the screen is not needed', function () {
+    Route::middleware(['web', GuardSetup::using(SetupStub::class, 'Widgets', 'widgets')])
+        ->get('/missing/{widget}', fn (Widget $widget) => 'unreachable');
+
+    $this->get('/missing/424242')->assertNotFound();
+});
+
+it('lets a database that cannot be reached stay an error, not a setup screen', function () {
+    $this->withoutExceptionHandling();
+    config(['database.connections.broken' => ['driver' => 'sqlite', 'database' => '/nonexistent/dir/db.sqlite', 'prefix' => '']]);
+    config(['database.default' => 'broken']);
+
+    Route::middleware(['web', GuardSetup::using(SetupStub::class, 'Widgets', 'widgets')])
+        ->get('/outage/{widget}', fn (Widget $widget) => 'unreachable');
+
+    $thrown = null;
+
+    try {
+        $this->get('/outage/1');
+    } catch (Throwable $e) {
+        $thrown = $e;
+    } finally {
+        // RefreshDatabase rolls its transaction back on the default connection in tearDown.
+        config(['database.default' => 'testing']);
+    }
+
+    expect($thrown)->not->toBeNull()
+        ->and(SetupStub::$calls)->toBe([]);
 });
