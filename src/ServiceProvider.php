@@ -5,6 +5,7 @@ namespace Goldnead\BrandContext;
 use Goldnead\BrandContext\Contracts\BrandTokenResolver;
 use Goldnead\BrandContext\Contracts\SenderIdentityResolver;
 use Goldnead\BrandContext\Contracts\UserSource;
+use Goldnead\BrandContext\Http\Middleware\GuardSetup;
 use Goldnead\BrandContext\Http\Middleware\ResolveBrandFromToken;
 use Goldnead\BrandContext\Http\Middleware\SetBrandForSite;
 use Goldnead\BrandContext\Http\Middleware\SetBrandFromSession;
@@ -17,7 +18,9 @@ use Goldnead\BrandContext\Settings\SettingsNavChild;
 use Goldnead\BrandContext\Settings\SettingsNavSuite;
 use Goldnead\BrandContext\Settings\SettingsRegistry;
 use Goldnead\BrandContext\Simulation\PersonSources;
+use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Routing\Router;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
@@ -233,6 +236,89 @@ class ServiceProvider extends BaseServiceProvider
         $router->aliasMiddleware('brand.token', ResolveBrandFromToken::class);
         $router->aliasMiddleware('brand.session', SetBrandFromSession::class);
         $router->aliasMiddleware('brand.site', SetBrandForSite::class);
+        $router->aliasMiddleware(GuardSetup::ALIAS, GuardSetup::class);
+
+        // A route-level middleware is sorted behind SubstituteBindings unless the
+        // priority list says otherwise, and behind it is too late: the bound
+        // model's query has already thrown. The list is changed on the router
+        // itself. The kernel's addToMiddlewarePriorityBefore() would do the same,
+        // but it re-registers the kernel's middleware groups on the router as it
+        // goes, which drops whatever another package pushed into `web` or `api` before us.
+        //
+        // The router's list is the kernel's, copied over whenever the kernel syncs: when it is
+        // built, and again whenever any package calls one of its group or priority methods
+        // (Statamic's API provider does, after this one has booted). An entry made on the
+        // router alone would be overwritten by the next sync, so it is made in the kernel's
+        // own list too, which is only a property write: no sync, no reset of the groups.
+        // Now if the kernel is there, else right after it is built.
+        $settle = function () use ($router) {
+            $this->placeGuardAheadOfBindings($router);
+            $this->placeGuardInKernel();
+
+            if (! $this->guardIsAheadOfBindings($router)) {
+                // Silence would bring the HTTP 500 back on every detail page of every addon, and look like an addon bug.
+                $message = 'brand-context: the setup guard could not be placed ahead of SubstituteBindings in the middleware '
+                    .'priority list (a priority list without SubstituteBindings). Detail pages '
+                    .'whose tables are missing will fail in route-model binding instead of showing the setup screen.';
+
+                if ($this->app->environment('local', 'testing')) {
+                    throw new \RuntimeException($message);
+                }
+
+                report(new \RuntimeException($message));
+            }
+        };
+
+        if ($this->app->resolved(HttpKernel::class)) {
+            $settle();
+        } else {
+            $this->app->afterResolving(HttpKernel::class, fn () => $settle());
+        }
+    }
+
+    protected function placeGuardAheadOfBindings(Router $router): void
+    {
+        $priority = array_values(array_filter($router->middlewarePriority, fn ($m) => $m !== GuardSetup::class));
+        $at = array_search(SubstituteBindings::class, $priority, true);
+
+        if ($at === false) {
+            return;
+        }
+
+        array_splice($priority, $at, 0, [GuardSetup::class]);
+        $router->middlewarePriority = $priority;
+    }
+
+    protected function placeGuardInKernel(): void
+    {
+        if (! $this->app->resolved(HttpKernel::class)) {
+            return;
+        }
+
+        $kernel = $this->app->make(HttpKernel::class);
+
+        if (! property_exists($kernel, 'middlewarePriority')) {
+            return;
+        }
+
+        // The property is protected on Illuminate's kernel; a closure bound to the instance may write it.
+        (function () {
+            $priority = array_values(array_filter($this->middlewarePriority, fn ($m) => $m !== GuardSetup::class));
+            $at = array_search(SubstituteBindings::class, $priority, true);
+
+            if ($at !== false) {
+                array_splice($priority, $at, 0, [GuardSetup::class]);
+                $this->middlewarePriority = $priority;
+            }
+        })->call($kernel);
+    }
+
+    protected function guardIsAheadOfBindings(Router $router): bool
+    {
+        $guardAt = array_search(GuardSetup::class, $router->middlewarePriority, true);
+        $bindingsAt = array_search(SubstituteBindings::class, $router->middlewarePriority, true);
+
+        return $guardAt !== false && $bindingsAt !== false && $guardAt < $bindingsAt;
     }
 
     /**

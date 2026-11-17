@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+## 1.27.1 — 2026-11-16
+
+### Fixed: the `MailPreview` tests read the output by string, which broke on libxml 2.14 and later
+CI had been red since 28.10.2026 on three `MailPreview` tests. The runners (ubuntu-26.04) build PHP against libxml 2.15.2; local machines and the
+production container run 2.9.14. Checked by running the unchanged `MailPreview` on both: no fetch gets through on either (about 60 vectors: `src`,
+`srcset`, `lowsrc`, `background`, `url()`, `@import`, `image-set()`, escapes, `<picture>`, `<svg>`, frames, forms, raw text elements). What differs is how
+the parser reads odd markup, which the tests had pinned to 2.9:
+
+- `<scr<script>ipt>` is one inert element named `scr<script` in libxml 2.14+ (a browser reads it the same way), so the string `<script` appears in the
+  output without a script element. The test now looks at element names.
+- `<picture><source …><img src>` keeps the `img` in 2.14+, where 2.9 dropped it. The source is blocked and counted either way; the test now accepts both.
+- A style attribute whose value contains its own double quotes (`@\69mport "…"`) was never a well-formed attribute; 2.15 turns the pieces into attribute
+  names. The test now escapes the value.
+
+### Fixed: `@import"…"` without a space was not cut by the first layer (all libxml versions)
+
+`prepare()` cut `@import` only when whitespace followed it; CSS allows `@import"https://…";` and `@import'…';`. The text stayed in the prepared
+HTML. The frame's CSP (`default-src 'none'`) still blocked the fetch, so nothing loaded in the preview, but the first layer is meant to hold alone.
+It now cuts the import whatever follows the keyword.
+
+## 1.27.0 — 2026-11-16
+
+### Added: `GuardSetup` middleware (`brand.setup-guard`), the setup screen for CP detail pages
+
+A listing guards a missing table with `Setup::guard()` and shows a sentence instead of an HTTP 500. A detail route that takes its model by type
+hint (`edit(Funnel $funnel)`) never got that: `SubstituteBindings` runs the query before the method begins, and the query is what throws.
+`GuardSetup::using(Setup::class, 'Funnels', 'funnels', 'funnel_steps')` is the middleware string for such a route. It asks the addon's own
+`Setup::guard()` first, so the detail page shows the same screen as the listing and the reason still goes to the log. The package registers it
+ahead of `SubstituteBindings` in the kernel's middleware priority, which is what a route-level middleware needs to run before the binding.
+
+- On a migrated install it costs one table check and nothing else. Only when a table is missing does it act, and then, in the Control Panel, it
+  first runs what its position makes the request skip: what follows `SubstituteBindings` in the `statamic.cp` group, then the whole
+  `statamic.cp.authenticated` group (only those the route itself carries). So the login check, locale, permissions and the shared navigation are in place, a stranger gets the login
+  redirect instead of the table names, and the guard writes no log line for anonymous requests.
+- Known limit: the route's own `can:` middleware runs after the binding, so a user who may open the Control Panel but not this page sees the setup
+  screen (and the table names) on an unmigrated install, where the listing would have said 403.
+- The tables passed to `using()` are the check; the addon's `guard()` decides what the screen is. List the tables the page's query touches.
+- It renders nothing itself. The screen, its translations and the log line stay in the addon.
+- If the kernel's priority list cannot take it ahead of `SubstituteBindings` (a custom HTTP kernel), the provider reports it (and throws in `local` and `testing`).
+- A database that is down is still a 500: that is an outage, not an unfinished setup.
+- A setup class without a public static `guard()` throws `InvalidArgumentException` on the first request, not a silent pass.
+
 ## 1.26.0 — 2026-10-21
 
 ### Added: `PersonSources::describe()`, which sources did not speak

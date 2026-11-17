@@ -17,17 +17,35 @@ it('keeps the look of an ordinary mail', function () {
         ->and($out['blocked_images'])->toBe(0);
 });
 
+/**
+ * The tag names the output is made of, as a parser reads them. A substring such as `<script` is not the question:
+ * libxml 2.14 and later tokenize like a browser, where `<scr<script>ipt>` is one inert element named `scr<script`
+ * (libxml 2.9 drops the second `<`). The output then holds the characters `<script` but no script element, in
+ * the browser's reading as in libxml's.
+ *
+ * @return list<string>
+ */
+function mailPreviewElementNames(string $html): array
+{
+    $previous = libxml_use_internal_errors(true);
+    $document = new DOMDocument;
+    $document->loadHTML('<?xml encoding="UTF-8"><div>'.$html.'</div>', LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_NONET);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previous);
+
+    $names = [];
+
+    foreach ((new DOMXPath($document))->query('//*') as $element) {
+        $names[] = strtolower($element->nodeName);
+    }
+
+    return $names;
+}
+
 it('removes scripts, frames, objects and the things that load on their own', function (string $markup) {
     $html = MailPreview::prepare('<p>Text</p>'.$markup)['html'];
 
-    expect(strtolower($html))->not->toContain('<script')
-        ->and(strtolower($html))->not->toContain('<iframe')
-        ->and(strtolower($html))->not->toContain('<object')
-        ->and(strtolower($html))->not->toContain('<embed')
-        ->and(strtolower($html))->not->toContain('<base')
-        ->and(strtolower($html))->not->toContain('<meta')
-        ->and(strtolower($html))->not->toContain('<link')
-        ->and(strtolower($html))->not->toContain('<svg')
+    expect(array_values(array_intersect(mailPreviewElementNames($html), ['script', 'iframe', 'object', 'embed', 'base', 'meta', 'link', 'svg'])))->toBe([])
         ->and($html)->toContain('Text');
 })->with([
     'script' => ['<script>alert(1)</script>'],

@@ -204,7 +204,7 @@ final class MailPreview
             return $block ? '' : null;
         }
 
-        $css = preg_replace('/@import\s[^;\n}]*;?/i', '', $css) ?? '';
+        $css = preg_replace('/@import\s*[^;\n}]*;?/i', '', $css) ?? '';
         $css = preg_replace('/url\s*\([^)]*\)/i', 'none', $css) ?? '';
         $css = preg_replace('/expression\s*\([^)]*\)/i', 'none', $css) ?? '';
         $css = preg_replace('/(behavior|-moz-binding)\s*:[^;}]*/i', '', $css) ?? '';

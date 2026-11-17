@@ -197,6 +197,24 @@ stays closed, and the controller produces the response it always produced. And
 the brand is set explicitly on every request — never inherited from the last one,
 which matters the moment the app runs in a long-lived process.
 
+## Setup screen for CP detail pages
+
+An addon's listing calls its own `Support\Setup::guard()` and shows a setup screen when a table is missing. A detail route that
+binds its model by type hint cannot do that in the method: the binding query runs first. Put the guard in front of the binding:
+
+```php
+use Goldnead\BrandContext\Http\Middleware\GuardSetup;
+use Goldnead\Funnels\Support\Setup;
+
+Route::get('/{funnel}/edit', [FunnelsController::class, 'edit'])
+    ->middleware(GuardSetup::using(Setup::class, 'Funnels', 'funnels', 'funnel_steps'));
+```
+
+The arguments are the addon's `Setup` class (anything with `guard(string $title, string ...$tables)`), the page's heading (pass a
+translation key such as `'funnels::messages.nav'`: it is translated per request, so a cached route file keeps no stale locale), and
+every table the page touches. List the bound model's table too, since that is the query that throws. Nothing is rendered by
+this package; the screen is the addon's own.
+
 ## Queued jobs
 
 A worker has no request behind it, so nothing resolves a brand — and under
