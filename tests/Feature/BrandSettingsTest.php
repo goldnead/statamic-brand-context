@@ -20,7 +20,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Schema;
 use Statamic\CP\Navigation\NavItem;
 use Statamic\Facades\CP\Nav;
 use Statamic\Facades\User as StatamicUser;
@@ -430,38 +429,42 @@ it('still draws the screen on an install whose migrations never ran', function (
     // `BrandManager::default()` throws there — correctly, it is the honest
     // answer to "which brand is this" — but the settings screen must not pass
     // that on as a 500. Reading needs no brand at all.
-    Schema::dropIfExists('brand_settings');
-    Brand::query()->delete();
+    //
+    // The block runs on a second, empty in-memory SQLite connection without
+    // migrations (see `withUnmigratedDatabase()`), not after a `Schema::dropIfExists()`
+    // on the real one: that DDL commits implicitly under MySQL and would leak
+    // into the following tests.
+    $this->withUnmigratedDatabase(function () {
+        // Ein Prozess, der nie eine Marke aufloesen konnte — nicht einer, dem eine
+        // schon aufgeloeste unter den Fuessen weggeloescht wurde. Der Unterschied
+        // ist nicht kosmetisch: `BrandManager` merkt sich die Standardmarke
+        // absichtlich fuer den Prozess, und `forget()` raeumt nur die *aktuelle*
+        // Marke weg. Stand hier vorher `app('brand-context')->forget()`, hing der
+        // Test daran, ob beim Booten schon jemand `default()` gefragt hatte: unter
+        // der In-Memory-SQLite steht die Datenbank zu dem Zeitpunkt noch nicht,
+        // unter MySQL schon. Derselbe Test war deshalb auf dem einen Treiber gruen
+        // und auf dem anderen rot, und was er dort meldete, war nicht der Defekt,
+        // den er sucht.
+        app()->forgetInstance('brand-context');
+        app()->forgetInstance('brand-context.settings');
 
-    // Ein Prozess, der nie eine Marke aufloesen konnte — nicht einer, dem eine
-    // schon aufgeloeste unter den Fuessen weggeloescht wurde. Der Unterschied
-    // ist nicht kosmetisch: `BrandManager` merkt sich die Standardmarke
-    // absichtlich fuer den Prozess, und `forget()` raeumt nur die *aktuelle*
-    // Marke weg. Stand hier vorher `app('brand-context')->forget()`, hing der
-    // Test daran, ob beim Booten schon jemand `default()` gefragt hatte: unter
-    // der In-Memory-SQLite steht die Datenbank zu dem Zeitpunkt noch nicht,
-    // unter MySQL schon. Derselbe Test war deshalb auf dem einen Treiber gruen
-    // und auf dem anderen rot, und was er dort meldete, war nicht der Defekt,
-    // den er sucht.
-    app()->forgetInstance('brand-context');
-    app()->forgetInstance('brand-context.settings');
+        $controller = app(BrandSettingsController::class);
 
-    $controller = app(BrandSettingsController::class);
+        // As an Inertia visit, so the response is JSON. Rendering the first visit
+        // would need the application's root Blade view, which the testbench
+        // skeleton has no reason to ship.
+        $request = Request::create('/cp/brand-settings', 'GET', server: ['HTTP_X_INERTIA' => 'true']);
+        $request->setUserResolver(fn () => new FakeUser('admin', 'admin@example.com', null, ['manage widget settings']));
 
-    // As an Inertia visit, so the response is JSON. Rendering the first visit
-    // would need the application's root Blade view, which the testbench
-    // skeleton has no reason to ship.
-    $request = Request::create('/cp/brand-settings', 'GET', server: ['HTTP_X_INERTIA' => 'true']);
-    $request->setUserResolver(fn () => new FakeUser('admin', 'admin@example.com', null, ['manage widget settings']));
+        $props = $controller->index($request)->toResponse($request)->getData(true)['props'];
 
-    $props = $controller->index($request)->toResponse($request)->getData(true)['props'];
-
-    expect($props['brand'])->toBeNull()
-        ->and($props['writable'])->toBeFalse()
-        ->and($props['multiBrand'])->toBeFalse()
-        // And it still shows what the config files say, so the page is worth
-        // opening rather than merely not broken.
-        ->and($props['sections'][0]['values']['label'])->toBe('packaged');
+        expect($props['brand'])->toBeNull()
+            ->and($props['writable'])->toBeFalse()
+            ->and($props['multiBrand'])->toBeFalse()
+            // And it still shows what the config files say, so the page is worth
+            // opening rather than merely not broken.
+            ->and($props['sections'][0]['values']['label'])->toBe('packaged');
+    });
 });
 
 it('refuses two addons claiming the same namespace', function () {
