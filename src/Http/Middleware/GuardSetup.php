@@ -4,6 +4,7 @@ namespace Goldnead\BrandContext\Http\Middleware;
 
 use Closure;
 use Goldnead\BrandContext\ServiceProvider;
+use Illuminate\Auth\Middleware\Authorize;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Contracts\Session\Middleware\AuthenticatesSessions;
 use Illuminate\Contracts\Support\Responsable;
@@ -168,11 +169,45 @@ class GuardSetup
             $request->route()?->excludedMiddleware() ?? []
         );
 
-        return array_values(array_filter(
+        $replayed = array_values(array_filter(
             $resolved,
             fn ($middleware) => ! is_string($middleware)
                 || (! is_subclass_of(strtok($middleware, ':'), AuthenticatesSessions::class)
                     && ! is_subclass_of(strtok($middleware, ':'), AuthenticatesRequests::class))
         ));
+
+        return [...$replayed, ...$this->routeAuthorization($carried, $request)];
+    }
+
+    /**
+     * The route's own `can:` checks, which the kernel's priority list runs after `SubstituteBindings`
+     * and so after this middleware. Without them a signed-in user who may not open the page sees the
+     * setup screen, and with it the table names, that a refused request never would. They run last,
+     * behind the login check, and only when the screen is going to be shown.
+     *
+     * Only what the route itself names is picked: the groups' own `Authorize` entries are already
+     * part of the replay above.
+     *
+     * @param  array<int, mixed>  $carried
+     * @return list<string>
+     */
+    private function routeAuthorization(array $carried, Request $request): array
+    {
+        $router = app('router');
+        $found = [];
+
+        foreach ($carried as $middleware) {
+            if (! is_string($middleware)) {
+                continue;
+            }
+
+            $resolved = $router->resolveMiddleware([$middleware], $request->route()?->excludedMiddleware() ?? []);
+
+            if (count($resolved) === 1 && is_string($resolved[0]) && is_a(strtok($resolved[0], ':'), Authorize::class, true)) {
+                $found[] = $resolved[0];
+            }
+        }
+
+        return $found;
     }
 }

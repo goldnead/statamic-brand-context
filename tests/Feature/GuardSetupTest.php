@@ -11,6 +11,7 @@ use Goldnead\BrandContext\Tests\Fixtures\Widget;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Database\QueryException;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 
@@ -152,6 +153,36 @@ it('does not show the screen or write the log line to somebody the login check r
     expect(SetupStub::$calls)->toBe([])
         ->and(RecordsOrder::$log)->not->toContain('guard')
         ->and(RecordsOrder::$log)->not->toContain('nav');
+});
+
+it('does not show the screen or write the log line to somebody the route\'s own can: check refuses', function () {
+    Gate::define('see-ghosts', fn ($user = null) => false);
+    Route::middleware(['web', 'can:see-ghosts', GuardSetup::using(SetupStub::class, 'Page', 'ghosts_never_migrated')])
+        ->get('/permitted/{ghost}', fn (Ghost $ghost) => 'unreachable');
+
+    $this->get('/permitted/1', ['Accept' => 'application/json'])->assertForbidden();
+
+    expect(SetupStub::$calls)->toBe([]);
+});
+
+it('shows the screen to somebody the route\'s own can: check lets through', function () {
+    Gate::define('see-ghosts', fn ($user = null) => true);
+    Route::middleware(['web', 'can:see-ghosts', GuardSetup::using(SetupStub::class, 'Page', 'ghosts_never_migrated')])
+        ->get('/permitted/{ghost}', fn (Ghost $ghost) => 'unreachable');
+
+    $this->get('/permitted/1')->assertOk()->assertSee('setup required: Page', false);
+});
+
+it('checks the route\'s can: after the login check in the control panel', function () {
+    fakeControlPanel();
+    Gate::define('see-ghosts', fn ($user = null) => false);
+    Route::middleware(['statamic.cp', 'statamic.cp.authenticated', 'can:see-ghosts', GuardSetup::using(SetupStub::class, 'Page', 'ghosts_never_migrated')])
+        ->get('/cp/permitted/{ghost}', fn (Ghost $ghost) => 'unreachable');
+
+    $this->get('/cp/permitted/1', ['Accept' => 'application/json'])->assertForbidden();
+
+    expect(RecordsOrder::$log)->toBe(['cp-before', 'cp-after', 'login-check', 'nav'])
+        ->and(SetupStub::$calls)->toBe([]);
 });
 
 it('turns a guard that answers with something other than a response into one', function () {

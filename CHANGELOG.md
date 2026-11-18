@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed: `GuardSetup` showed the setup screen to a signed-in user the route's own `can:` check refuses
+The middleware stands ahead of `SubstituteBindings`, and the kernel runs `Authorize` (`can:`) behind it. On a database whose tables were missing, a Control Panel user without the permission for the page therefore got the setup screen, with the table names, instead of the refusal. The route's own `can:` checks now run first, after the login check and only when the screen is about to be shown. Routes without a `can:` and installs with all tables present are unchanged. No migration, no new config key.
+
 ## 1.27.1 — 2026-11-16
 
 ### Fixed: the `MailPreview` tests read the output by string, which broke on libxml 2.14 and later
