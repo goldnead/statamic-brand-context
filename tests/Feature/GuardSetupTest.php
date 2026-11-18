@@ -173,6 +173,19 @@ it('shows the screen to somebody the route\'s own can: check lets through', func
     $this->get('/permitted/1')->assertOk()->assertSee('setup required: Page', false);
 });
 
+it('leaves a can: that names a route parameter alone: before binding it would judge a string, not a model', function () {
+    Gate::define('see-ghost', function ($user, $ghost) {
+        // A model argument that is still the URL's string would end up here.
+        expect($ghost)->toBeInstanceOf(Ghost::class);
+
+        return true;
+    });
+    Route::middleware(['web', 'can:see-ghost,ghost', GuardSetup::using(SetupStub::class, 'Page', 'ghosts_never_migrated')])
+        ->get('/model-arg/{ghost}', fn (Ghost $ghost) => 'unreachable');
+
+    $this->get('/model-arg/1')->assertOk()->assertSee('setup required: Page', false);
+});
+
 it('checks the route\'s can: after the login check in the control panel', function () {
     fakeControlPanel();
     Gate::define('see-ghosts', fn ($user = null) => false);

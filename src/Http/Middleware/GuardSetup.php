@@ -185,8 +185,14 @@ class GuardSetup
      * setup screen, and with it the table names, that a refused request never would. They run last,
      * behind the login check, and only when the screen is going to be shown.
      *
-     * Only what the route itself names is picked: the groups' own `Authorize` entries are already
-     * part of the replay above.
+     * Known limits, on purpose:
+     *  - Only a `can:` the route names itself is picked (one entry, one alias). The Control Panel's
+     *    own groups are replayed above; a custom group that carries a `can:` is not looked into.
+     *  - A `can:` whose arguments name a route parameter (`can:update,post`) is left out. Before
+     *    `SubstituteBindings` that parameter is the raw string from the URL, not the model, and the
+     *    policy would be asked about a string. That route keeps the old behaviour (the screen).
+     *  - The check runs again in the kernel when the guard has nothing to show and the request goes
+     *    on; a gate with side effects sees two calls in that one case.
      *
      * @param  array<int, mixed>  $carried
      * @return list<string>
@@ -194,6 +200,7 @@ class GuardSetup
     private function routeAuthorization(array $carried, Request $request): array
     {
         $router = app('router');
+        $parameters = $request->route()?->parameterNames() ?? [];
         $found = [];
 
         foreach ($carried as $middleware) {
@@ -203,9 +210,18 @@ class GuardSetup
 
             $resolved = $router->resolveMiddleware([$middleware], $request->route()?->excludedMiddleware() ?? []);
 
-            if (count($resolved) === 1 && is_string($resolved[0]) && is_a(strtok($resolved[0], ':'), Authorize::class, true)) {
-                $found[] = $resolved[0];
+            if (count($resolved) !== 1 || ! is_string($resolved[0]) || ! is_a(strtok($resolved[0], ':'), Authorize::class, true)) {
+                continue;
             }
+
+            // `ability,argument,…`: every argument after the ability that is a route parameter is a model not yet bound.
+            $arguments = array_slice(explode(',', (string) substr(strstr($resolved[0], ':') ?: '', 1)), 1);
+
+            if (array_intersect($arguments, $parameters) !== []) {
+                continue;
+            }
+
+            $found[] = $resolved[0];
         }
 
         return $found;
