@@ -20,6 +20,14 @@ class NamespaceSettings
     /** @var array<string, mixed>|null */
     protected ?array $memo = null;
 
+    /** Seconds to leave an unreadable table alone before asking again. */
+    protected const RETRY_AFTER_SECONDS = 5;
+
+    protected ?int $retryAt = null;
+
+    /** Has an unreadable table already been reported for this object? */
+    protected bool $reportedOutage = false;
+
     public function __construct(
         protected string $namespace,
         protected ?int $brandId,
@@ -54,13 +62,30 @@ class NamespaceSettings
             return $this->memo = [];
         }
 
+        // Still inside the pause after a failed read: do not hammer a table
+        // that is missing or a database that is down once per settings read.
+        if ($this->retryAt !== null && now()->timestamp < $this->retryAt) {
+            return [];
+        }
+
         try {
             return $this->memo = Cache::rememberForever($this->cacheKey(), fn () => $this->read());
         } catch (\Throwable) {
             try {
                 return $this->memo = $this->read();
-            } catch (\Throwable) {
-                return $this->memo = [];
+            } catch (\Throwable $e) {
+                // Config values for now, but not for the life of this object: a
+                // short outage must not leave a long-running worker on the
+                // wrong thresholds, senders and locale. Not memoized, so the
+                // next call asks again. Reported once per object, not per read.
+                $this->retryAt = now()->timestamp + self::RETRY_AFTER_SECONDS;
+
+                if (! $this->reportedOutage) {
+                    $this->reportedOutage = true;
+                    report($e);
+                }
+
+                return [];
             }
         }
     }

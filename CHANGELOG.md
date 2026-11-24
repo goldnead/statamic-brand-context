@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed: multi-brand only, breaking risk
+- **`HasBrand` refuses to create a record without a brand.** In multi-brand mode, with no current brand and no brand id on the model, `creating` now throws `NoCurrentBrand` instead of stamping the default brand. Reads are fail closed in that state, so the row used to land where nobody looking at the right brand could see it (unknown token, queue job without payload after `forget()`). Not affected: single-brand installations (always have a current brand), `BrandContext::withoutBrandScope()`, `fail_mode: open`, and models that carry an explicit brand id. Jobs and commands that create branded rows must run inside `BrandContext::runFor()` or set the brand id.
+- **`RunsForEachBrand` no longer stops at the first failing brand.** Every brand runs; an exception in one is reported and counted as a failure, the exit code is the first non-zero one, and a summary line says how many brands ran without error and which did not. `--brand=<id>` no longer compares the integer column with a handle string (a type error on Postgres).
+
+### Fixed
+- `NamespaceSettings::overrides()`: an unreadable settings table no longer leaves a worker on config values for the life of the object. The empty result is not memoized, the next read is tried after 5 seconds, and the error is reported once per object. Before, it was swallowed silently and kept.
+
 ### Fixed: `GuardSetup` showed the setup screen to a signed-in user the route's own `can:` check refuses
 The middleware stands ahead of `SubstituteBindings`, and the kernel runs `Authorize` (`can:`) behind it. On a database whose tables were missing, a Control Panel user without the permission for the page therefore got the setup screen, with the table names, instead of the refusal. The route's own `can:` checks now run first, after the login check and only when the screen is about to be shown. Routes without a `can:` and installs with all tables present are unchanged. No migration, no new config key. Limits: a `can:` whose arguments name a route parameter (`can:update,post`) is not replayed, because before `SubstituteBindings` the parameter is still the URL's string; and a `can:` inside a custom middleware group is not looked into (the Control Panel's own groups are replayed as before).
 

@@ -37,6 +37,12 @@ trait RunsForEachBrand
     /**
      * Runs the callback once per brand and returns the first non-zero exit code.
      *
+     * One brand failing (a non-zero exit, or an exception) does not stop the
+     * brands behind it: a cron run that gave up at brand 2 of 5 looked like one
+     * error while three brands silently never ran. Every brand runs, exceptions
+     * are reported and counted as a failure, and a summary says how many of the
+     * brands ran without error and which did not.
+     *
      * @param  Closure(Brand|null): int|null  $callback
      */
     protected function forEachBrand(Closure $callback): int
@@ -45,19 +51,39 @@ trait RunsForEachBrand
             return (int) ($callback(null) ?? self::SUCCESS);
         }
 
-        foreach ($this->brandsToProcess() as $brand) {
+        $brands = collect($this->brandsToProcess())->values();
+        $firstExit = self::SUCCESS;
+        $failed = [];
+
+        foreach ($brands as $brand) {
             if ($this->shouldAnnounceBrand()) {
                 $this->line("Brand: {$brand->handle}");
             }
 
-            $exit = BrandContext::runFor($brand, fn () => $callback($brand));
+            try {
+                $exit = (int) (BrandContext::runFor($brand, fn () => $callback($brand)) ?? self::SUCCESS);
+            } catch (\Throwable $e) {
+                report($e);
+                $this->error("Brand {$brand->handle}: {$e->getMessage()}");
+                $exit = self::FAILURE;
+            }
 
-            if ((int) ($exit ?? self::SUCCESS) !== self::SUCCESS) {
-                return (int) $exit;
+            if ($exit !== self::SUCCESS) {
+                $failed[] = $brand->handle;
+                $firstExit = $firstExit === self::SUCCESS ? $exit : $firstExit;
             }
         }
 
-        return self::SUCCESS;
+        if ($failed !== []) {
+            $this->error(sprintf(
+                '%d of %d brands ran without error. Failed: %s',
+                $brands->count() - count($failed),
+                $brands->count(),
+                implode(', ', $failed),
+            ));
+        }
+
+        return $firstExit;
     }
 
     /** @return iterable<Brand> */
@@ -66,7 +92,13 @@ trait RunsForEachBrand
         $only = $this->hasOption('brand') ? $this->option('brand') : null;
 
         if ($only) {
-            return [Brand::query()->where('handle', $only)->orWhere('id', $only)->firstOrFail()];
+            // An id only when the value is one: comparing the integer column
+            // with a handle string is a type error on strict drivers (Postgres).
+            return [Brand::query()
+                ->where(fn ($query) => ctype_digit((string) $only)
+                    ? $query->where('id', (int) $only)->orWhere('handle', $only)
+                    : $query->where('handle', $only))
+                ->firstOrFail()];
         }
 
         return Brand::query()->orderBy('id')->get();

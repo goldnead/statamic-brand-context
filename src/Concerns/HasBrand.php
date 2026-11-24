@@ -2,6 +2,7 @@
 
 namespace Goldnead\BrandContext\Concerns;
 
+use Goldnead\BrandContext\Exceptions\NoCurrentBrand;
 use Goldnead\BrandContext\Models\Brand;
 use Goldnead\BrandContext\Scopes\BrandScope;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -24,6 +25,19 @@ trait HasBrand
 
             if (empty($model->{$column})) {
                 $manager = app('brand-context');
+
+                // The scope hides everything without a current brand; writing
+                // into the default brand then would put the row where nobody
+                // looking at the right brand can see it. Not when the scope is
+                // bypassed on purpose (admin operation) or the operator chose
+                // `fail_mode: open`. Single-brand always has a current brand.
+                if (
+                    ! $manager->hasCurrent()
+                    && ! $manager->scopeIsDisabled()
+                    && $manager->failMode() !== 'open'
+                ) {
+                    throw NoCurrentBrand::forModel($model::class);
+                }
 
                 // current() resolves to the default brand in single-brand mode
                 // and to the active brand in multi-brand mode.
