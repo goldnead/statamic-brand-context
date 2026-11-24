@@ -303,6 +303,8 @@ class NamespaceSettings
     public function forget(): void
     {
         $this->memo = null;
+        // A write has just happened: the pause after an outage must not hide it.
+        $this->retryAt = null;
 
         if ($this->brandId === null) {
             return;

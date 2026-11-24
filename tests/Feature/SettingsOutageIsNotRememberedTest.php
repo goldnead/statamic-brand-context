@@ -89,4 +89,13 @@ it('still remembers a successful read', function () {
     expect($settings->reads)->toBe(1);
 });
 
+it('reads again at once after forget(), so a write is not hidden by the pause', function () {
+    $settings = flakySettings($this->brand->id, 2);
+
+    $settings->overrides();
+    $settings->forget();
+
+    expect($settings->overrides())->toBe(['label' => 'from-db']);
+});
+
 afterEach(fn () => Carbon::setTestNow());
